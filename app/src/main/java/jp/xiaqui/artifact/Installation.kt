@@ -29,7 +29,9 @@ internal object Installation {
     @Suppress("DEPRECATION")
     fun describe(context: Context, apk: File): ApkInfo {
         val pm = context.packageManager
-        val record = pm.getPackageArchiveInfo(apk.path, flags()) ?: throw ImportFailure("破損または非対応のAPKです。")
+        // Android 10 collects archive certificates only when GET_SIGNATURES is also set.
+        val archiveFlags = flags() or PackageManager.GET_SIGNATURES
+        val record = pm.getPackageArchiveInfo(apk.path, archiveFlags) ?: throw ImportFailure("破損または非対応のAPKです。")
         val application = record.applicationInfo
         application?.sourceDir = apk.path
         application?.publicSourceDir = apk.path

@@ -36,7 +36,9 @@ class StoreFlowTest {
             val cached = Catalog(context).get(repo)!!
             val release = cached.visible.single()
             val asset = release.assets.single()
-            val info = cached.inspected[asset.identity()]!!
+            assertTrue("APK inspection failed: ${cached.error}", cached.inspected.containsKey(asset.identity()))
+            val info = cached.inspected.getValue(asset.identity())
+            assertTrue(info.signer.isNotBlank())
             assertEquals(context.packageName, info.pkg)
             assertEquals("同一版", compareInstalled(info,Installation.installed(context,info.pkg),true))
             saved = service.save(cached,release,asset)
