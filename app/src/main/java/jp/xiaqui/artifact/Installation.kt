@@ -14,16 +14,45 @@ class ApkProvider : FileProvider()
 
 internal object Installation {
     @Suppress("DEPRECATION")
-    fun inspect(context: Context, apk: File): String {
-        val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
-        val info = context.packageManager.getPackageArchiveInfo(apk.path, flags)
-            ?: throw ImportFailure("AndroidがこのAPKを読み取れません。")
-        val signers = if (Build.VERSION.SDK_INT >= 28) info.signingInfo?.apkContentsSigners else info.signatures
-        val fingerprints = signers.orEmpty().joinToString("\n") { signer ->
+    private fun flags() = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+
+    @Suppress("DEPRECATION")
+    private fun info(record: android.content.pm.PackageInfo, label: String): ApkInfo {
+        val signers = if (Build.VERSION.SDK_INT >= 28) record.signingInfo?.apkContentsSigners else record.signatures
+        val fingerprints = signers.orEmpty().map { signer ->
             MessageDigest.getInstance("SHA-256").digest(signer.toByteArray()).joinToString(":") { "%02X".format(it) }
-        }
-        val code = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
-        return "${info.packageName}\nversion ${info.versionName} ($code)\n署名 SHA-256\n${fingerprints.ifEmpty { "取得できませんでした" }}\n更新可否はOSが判定します。"
+        }.sorted().joinToString("\n")
+        val code = if (Build.VERSION.SDK_INT >= 28) record.longVersionCode else record.versionCode.toLong()
+        return ApkInfo(record.packageName, label, record.versionName.orEmpty(), code, fingerprints)
+    }
+
+    @Suppress("DEPRECATION")
+    fun describe(context: Context, apk: File): ApkInfo {
+        val pm = context.packageManager
+        val record = pm.getPackageArchiveInfo(apk.path, flags()) ?: throw ImportFailure("破損または非対応のAPKです。")
+        val application = record.applicationInfo
+        application?.sourceDir = apk.path
+        application?.publicSourceDir = apk.path
+        val label = application?.let { runCatching { it.loadLabel(pm).toString() }.getOrNull() } ?: record.packageName
+        return info(record, label)
+    }
+
+    @Suppress("DEPRECATION")
+    fun installed(context: Context, pkg: String): ApkInfo? {
+        val pm = context.packageManager
+        return try { info(pm.getPackageInfo(pkg, flags()), pkg) }
+        catch (_: PackageManager.NameNotFoundException) { null }
+    }
+
+    fun status(context: Context, meta: ApkInfo): String {
+        val local = installed(context, meta.pkg)
+        val comparison = compareInstalled(meta, local, Build.VERSION.SDK_INT <= 29)
+        return if (local == null) comparison else "$comparison · 導入済み ${local.version} (${local.code})"
+    }
+
+    fun inspect(context: Context, apk: File): String {
+        val meta = describe(context, apk)
+        return "${meta.summary}\n${status(context, meta)}\n署名 SHA-256\n${meta.signer.ifEmpty { "取得不能" }}\n旧版や異なる署名はOSが拒否する場合があります。アンインストールすると対象アプリのデータが消えます。"
     }
 
     fun permissionSettings(context: Context): Intent? {
@@ -40,6 +69,6 @@ internal object Installation {
             .map { it.activityInfo }
             .firstOrNull { it.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0 }
             ?: throw ImportFailure("端末の標準インストーラが見つかりません。")
-        return prompt.setClassName(target.packageName, target.name)
+        return prompt.setClassName(target.packageName, target.name).putExtra(Intent.EXTRA_RETURN_RESULT, true)
     }
 }

@@ -11,7 +11,7 @@ import java.security.DigestInputStream
 import java.security.MessageDigest
 
 internal data class ReleaseItem(val id: Long, val tag: String)
-internal data class ReleaseApk(val id: Long, val name: String, val size: Long, val digest: String?)
+internal data class ReleaseApk(val id: Long, val name: String, val size: Long, val digest: String?, val updated: String = "")
 
 internal class GitHubReleases(private val auth: ReleaseAuth,
     private val connect: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }) {
@@ -41,7 +41,13 @@ internal class GitHubReleases(private val auth: ReleaseAuth,
                         if (url.protocol != "https" || url.userInfo != null || url.host.isEmpty() || url.port !in listOf(-1, 443))
                             throw ImportFailure("安全なHTTPS転送先を取得できません。")
                     }
-                    401, 403, 404 -> throw ImportFailure("GitHub HTTP $status。トークンの期限・Contents読取権限、利用制限、Releaseの存在を確認してください。")
+                    403, 429 -> {
+                        if (status == 429 || connection.getHeaderField("X-RateLimit-Remaining") == "0" ||
+                            connection.getHeaderField("Retry-After") != null)
+                            throw ImportFailure("GitHubのAPI利用制限です。時間をおいて再試行してください。")
+                        throw ImportFailure("GitHub HTTP 403。Contents読取権限・組織の承認を確認してください。")
+                    }
+                    401, 404 -> throw ImportFailure("GitHub HTTP $status。トークンの期限・Contents読取権限、利用制限、Releaseの存在を確認してください。")
                     else -> throw ImportFailure("GitHubから取得できませんでした（HTTP $status）。")
                 }
             } finally { connection.disconnect() }
@@ -55,24 +61,59 @@ internal class GitHubReleases(private val auth: ReleaseAuth,
         buffer.toString("UTF-8")
     }
 
-    fun releases(link: ReleaseLink): List<ReleaseItem> {
-        val rows = JSONArray(json(link, "${link.apiBase}?per_page=30"))
-        return (0 until rows.length()).map { rows.getJSONObject(it) }.filterNot { it.optBoolean("draft") }
-            .map { ReleaseItem(it.getLong("id"), it.getString("tag_name")) }
+    private fun releaseRows(link: ReleaseLink, visit: (JSONObject) -> Unit) {
+        var page = 1
+        while (true) {
+            val rows = JSONArray(json(link, "${link.apiBase}?per_page=30&page=$page"))
+            for (i in 0 until rows.length()) {
+                val row = rows.getJSONObject(i)
+                if (!row.optBoolean("draft")) visit(row)
+            }
+            if (rows.length() < 30) return
+            page++
+            if (page > 100) {
+                if (JSONArray(json(link, "${link.apiBase}?per_page=30&page=$page")).length() == 0) return
+                throw ImportFailure("Release履歴が上限（3,000件）を超えています。")
+            }
+        }
+    }
+
+    fun releases(link: ReleaseLink): List<ReleaseItem> = buildList {
+        releaseRows(link) { add(ReleaseItem(it.getLong("id"), it.getString("tag_name"))) }
+    }
+
+    fun history(link: ReleaseLink): List<StoreRelease> = buildList {
+        var retainedBytes = 0L
+        releaseRows(link) { row ->
+            val id = row.getLong("id")
+            val embedded = row.optJSONArray("assets")
+            val apks = if (embedded == null || embedded.length() >= 30) assets(link, id)
+                else (0 until embedded.length()).mapNotNull { apk(embedded.getJSONObject(it), null) }
+            retainedBytes += 128L + 4L * row.getString("tag_name").length +
+                apks.sumOf { 192L + 4L * (it.name.length + it.digest.orEmpty().length + it.updated.length) }
+            if (retainedBytes > 512L * 1024) throw ImportFailure("履歴の端末保存上限を超えています。以前の取得情報を保持します。")
+            if (apks.isNotEmpty()) add(StoreRelease(id, row.getString("tag_name"),
+                row.getString("published_at"), row.optBoolean("prerelease"), apks))
+        }
+    }.distinctBy { it.id }.sortedByDescending { it.published }
+
+    private fun apk(row: JSONObject, wanted: String?): ReleaseApk? {
+        val name = row.getString("name")
+        if (!name.endsWith(".apk", true) || wanted != null && name != wanted) return null
+        val digest = row.optString("digest").takeIf { it.startsWith("sha256:") }?.removePrefix("sha256:")
+        return ReleaseApk(row.getLong("id"), name, row.getLong("size"), digest, row.optString("updated_at"))
     }
 
     fun assets(link: ReleaseLink, releaseId: Long? = null): List<ReleaseApk> {
-        val id = releaseId ?: JSONObject(json(link, link.metadata)).getLong("id")
+        val id = releaseId ?: JSONObject(json(link, link.metadata)).let {
+            if (it.optBoolean("draft")) throw ImportFailure("下書きReleaseは対象外です。")
+            it.getLong("id")
+        }
         val result = mutableListOf<ReleaseApk>()
         for (page in 1..10) {
             val rows = JSONArray(json(link, "${link.apiBase}/$id/assets?per_page=100&page=$page"))
             for (index in 0 until rows.length()) {
-                val row = rows.getJSONObject(index)
-                val name = row.getString("name")
-                if (name.endsWith(".apk", true) && (link.name == null || name == link.name)) {
-                    val digest = row.optString("digest").takeIf { it.startsWith("sha256:") }?.removePrefix("sha256:")
-                    result += ReleaseApk(row.getLong("id"), name, row.getLong("size"), digest)
-                }
+                apk(rows.getJSONObject(index), link.name)?.let(result::add)
             }
             if (rows.length() < 100 || (link.name != null && result.isNotEmpty())) return result
         }

@@ -1,0 +1,51 @@
+package jp.xiaqui.artifact
+
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+
+class StoreTest {
+    @get:Rule val temp = TemporaryFolder()
+    private val apk = ApkInfo("org.test.app", "Sample", "v9", 9, "AA")
+    @Test fun repositoryIdentityAndScopedCredentials() {
+        assertEquals("a/b", repoName("https://github.com/A/B/releases/tag/preview"))
+        for (s in listOf("a/..", "https://github.com.evil/a/b", "https://user@github.com/a/b", "a/b/c"))
+            assertThrows(ImportFailure::class.java) { repoName(s) }
+        val auth = SessionAuth()
+        auth.use("a/b", "first")
+        auth.use("a/c", "second")
+        auth.forget("A/B")
+        assertNull(auth.tokenFor("a/b"))
+        assertEquals("second", auth.tokenFor("A/C"))
+    }
+    @Test fun cachedHistoryAndIndependentSameNameAssets() {
+        val x = ReleaseApk(1,"app.apk",100,null)
+        val y = x.copy(id = 2)
+        val row = StoreRelease(3,"v10","2026-01-01T00:00:00Z",false,listOf(x,y))
+        val r = Registration("a/b",false,"revision",42,"offline",
+            listOf(row.copy(id=4,preview=true),row),mapOf(x.identity() to apk, y.identity() to apk.copy(pkg="org.test.other")))
+        val restored = CatalogCodec.decode(CatalogCodec.encode(r))
+        assertEquals(r, restored)
+        assertEquals(listOf(row), restored.visible)
+        assertNotEquals(x.identity(), x.copy(updated="changed").identity())
+    }
+    @Test fun versionCodeAndSignerDetermineStatus() {
+        assertEquals("更新候補", compareInstalled(apk, apk.copy(version="v100",code=1),true))
+        assertEquals("同一版", compareInstalled(apk,apk,true))
+        assertTrue(compareInstalled(apk,apk.copy(code=20),true).startsWith("旧版"))
+        assertTrue(compareInstalled(apk,apk.copy(signer="BB"),true).contains("署名不一致"))
+        assertEquals("未導入", compareInstalled(apk,null,true))
+        assertEquals("判定不能", compareInstalled(apk,null,false))
+        assertEquals("判定不能", compareInstalled(apk,apk.copy(pkg="wrong"),true))
+    }
+    @Test fun quotaKeepsOldFilesUntilExplicitDeletion() {
+        val dir = temp.newFolder()
+        val store = ApkStore(dir)
+        val saved = (1..3).map { store.save(temp.newFile(), "same.apk", "pkg") }
+        assertThrows(ImportFailure::class.java) { store.save(temp.newFile(), "same.apk", "pkg") }
+        assertTrue(saved.all { it.exists() })
+        saved.first().delete()
+        assertTrue(store.save(temp.newFile(),"same.apk","pkg").exists())
+    }
+}

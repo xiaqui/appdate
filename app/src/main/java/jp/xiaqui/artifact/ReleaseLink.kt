@@ -42,8 +42,11 @@ internal data class ReleaseLink(val repository: String, val tag: String?, val na
 internal fun interface ReleaseAuth { fun tokenFor(repository: String): String? }
 
 internal class SessionAuth : ReleaseAuth {
-    @Volatile private var entry: Pair<String, String>? = null
-    override fun tokenFor(repository: String) = entry?.takeIf { it.first.equals(repository, true) }?.second
-    fun use(repository: String, token: String) { entry = repository to token }
-    fun clear() { entry = null }
+    private val entries = java.util.concurrent.ConcurrentHashMap<String, String>()
+    override fun tokenFor(repository: String) = entries[repository.lowercase()]
+    fun use(repository: String, token: String) { entries[repository.lowercase()] = token }
+    fun forget(repository: String) { entries.remove(repository.lowercase()) }
+    fun clear() { entries.clear() }
 }
+
+internal val processAuth = SessionAuth()

@@ -10,7 +10,7 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
-class MainActivity : Activity() {
+open class MainActivity : Activity() {
     private val worker = Executors.newCachedThreadPool()
     private lateinit var panel: LinearLayout
     private lateinit var session: File
@@ -47,6 +47,10 @@ class MainActivity : Activity() {
             source = state.getParcelable<Uri>("source") ?: runCatching { Incoming.uri(intent) }.getOrNull()
             diagnostic = state?.getString("diagnostic").orEmpty()
             home("読み込みを再開できます。")
+        } else if (this is SavedActivity) {
+            val name = intent.getStringExtra("saved").orEmpty()
+            if (name.isNotBlank() && name == File(name).name && File(storeDir, name).isFile) showSaved(File(storeDir, name))
+            else home("保存済みAPKがありません。")
         } else receive(intent)
     }
 
@@ -229,7 +233,7 @@ class MainActivity : Activity() {
     private fun saveApk(candidate: File, name: String, directory: File): Pair<File, String> {
         val metadata = Installation.inspect(this, candidate)
         if (Thread.currentThread().isInterrupted) throw InterruptedException()
-        val dest = ApkStore(storeDir).save(candidate, name)
+        val dest = ApkStore(storeDir).save(candidate, name, Installation.describe(this, candidate).pkg)
         directory.deleteRecursively()
         return dest to metadata
     }
@@ -286,7 +290,22 @@ class MainActivity : Activity() {
         if (requestCode == PICK && resultCode == RESULT_OK && data?.data != null)
             receive(Intent(Intent.ACTION_VIEW).setDataAndType(data.data, data.type))
         else if (requestCode == SETTINGS || requestCode == INSTALL)
-            saved?.let { confirm(it, details, "保存済みAPKは再度開けます。") }
+            saved?.let {
+                val result = if (requestCode == SETTINGS) "提供元の許可設定から戻りました。" else if (data?.hasExtra(android.content.pm.PackageInstaller.EXTRA_STATUS) == true)
+                    installStatus(data.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, 1))
+                else when (data?.getIntExtra("android.intent.extra.INSTALL_RESULT", 0)) {
+                    -4 -> "インストール先の容量が不足しています。"
+                    -7 -> "既存パッケージと署名が一致しません。"
+                    -25 -> "OSが旧版への更新を拒否しました。"
+                    else -> when (resultCode) {
+                    RESULT_OK -> "インストール完了。"
+                    RESULT_CANCELED -> "OS画面を閉じました（キャンセルまたは結果通知なし）。"
+                    else -> "OSがインストールを拒否しました。署名・容量・端末互換性を確認してください。"
+                    }
+                }
+                android.widget.Toast.makeText(this, result, android.widget.Toast.LENGTH_LONG).show()
+                confirm(it, details, "保存済みAPKは再度開けます。")
+            }
     }
 
     override fun onDestroy() {
@@ -301,10 +320,12 @@ class MainActivity : Activity() {
     }
 
     companion object {
-        private val auth = SessionAuth()
+        private val auth = processAuth
         private var started = false
         private const val PICK = 1
         private const val SETTINGS = 2
         private const val INSTALL = 3
     }
 }
+
+class SavedActivity : MainActivity()

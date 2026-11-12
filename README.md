@@ -1,33 +1,41 @@
-# Release APK Installer
+# Release Store — 個人用 Android アプリストア
 
-Android 6〜10向けの試作。GitHub MobileやブラウザからプライベートReleaseを共有し、APKを保存してOS標準インストーラで開けます。
+GitHub Releasesを配布元として、登録した複数のpublic/privateリポジトリのAPKを端末で確認・更新する試作です。Android 6〜10（API 23〜29）が主要対象です。
 
-## 最初のインストールと使い方
+## 初回設定
 
-1. GitHubにログインし、このリポジトリの検収用プレリリースから **ReleaseInstaller-debug.apk** をダウンロードして端末で開きます。試作はビルドごとにdebug鍵が変わることがあり、違う鍵の旧版から更新する場合は再インストールが必要です。アンインストールすると保存済みAPKは消えます。
-2. GitHub Mobileまたはブラウザで対象Releaseの「共有」から **Release APK Installer** を選びます。対応するリンクを「開く」場合も受信できます。対象は github.com の /OWNER/REPO/releases（直近30件から選択）、/releases/tag/TAG、/releases/latest、/releases/download/TAG/NAME.apk、/releases/latest/download/NAME.apk です。latestはGitHubが指定する最新の正式Releaseを参照します。プレリリースにはタグリンクを使えます。
-3. GitHubで **対象リポジトリ限定・Contents: Read-only** のfine-grained personal access tokenを発行し、画面のリポジトリ名を確認して入力します。組織で承認が必要な場合は承認済みトークンを使います。公開Releaseは匿名でも開けます。トークンはそのプロセスのメモリ内で1リポジトリに限って再利用し、ホームの「Releaseトークンを解除」またはプロセス終了で破棄します。GitHub Mobileでのログイン状態は共有されません。
-4. APKが1件なら自動、複数ならファイル名を選択します。個別Assetリンクは名前が一致したAPKを取得します。packageName、versionName、versionCode、証明書SHA-256を確認して「標準インストーラで開く」を押します。Android 6はPackageInstaller.Session、7以降はFileProviderを使用します。Android 8以降の初回は「この提供元を許可」して戻り、ボタンを再度押してください。Android 6/7はOSの提供元不明アプリ設定に従います。
-5. OS確認画面でキャンセルしてもAPKは内部の files/apks/ に残り、ホームの「保存したAPK」から再度開けます。1ファイル128 MiBまで。同名は別々に保存します。
+1. [検収用プレリリース](https://github.com/xiaqui/artifact/releases)で、目的の `store-preview-<SHA>` にある **ReleaseStore-preview.apk** をログイン済みブラウザから開きます。ストア版のIDは `jp.xiaqui.artifact.store.preview`。旧Installer版と並行導入でき、旧版の保存データは旧版から開けます。
+2. 起動して「リポジトリを登録」に `owner/repo` またはGitHub URLを貼り付けます。「最新の対象にプレリリースも含める」は登録ごとに変更できます。
+3. 非公開repoは「認証・再認証」で、そのrepoのContents読み取り権限を持つfine-grained PATを入力します。複数repoの認証はメモリ内で別々に保持し、プロセス終了後は再入力します。トークンの更新・解除は同じ画面から行います。公開repoは匿名で更新確認できます。
 
-## 認証と既知の制約
+## 更新と過去版
 
-APIでReleaseとAsset IDを解決し、バイナリを取得します。トークンの送信先は最初の api.github.com HTTPSリクエストのみです。バイナリのHTTPS転送は最大5回、転送時にはAuthorizationを外します。宣言サイズと、GitHubが提供する場合はSHA-256も確認します。401/403/404では権限、期限、レート制限、Release・タグの有無を確認してください。認証を変更するには解除して再試行します。Release一覧は下書きを除き、Asset一覧は最大1,000件を検査します。GitHub Enterpriseや分割APKの一括インストールは対象外です。
+一覧の「すべての更新を確認」、または個別repoの「更新を確認」を押します。下書きを除くAPK付きReleaseを公開日時順に表示します。プレリリースを除く設定では正式版だけが対象です。取得日時とエラーを表示し、通信失敗後も最後に取得した履歴を利用できます。
 
-GitHub Mobileの内蔵画面や既定ブラウザがリンクを処理すると候補に出ない場合があります。共有メニューを利用してください。受信診断はaction、type、scheme、限定したhost、URI種別だけを表示します。
+最新Releaseの未解析APKは、更新確認1回につき最大4件を一時取得してpackageName・アプリ名・versionCode・署名を調べます。通信量はAPKサイズに依存します。同じAssetの検査結果は次回も利用します。残りの候補と過去版は「APK情報を確認」で個別に解析できます。複数APKは明示的に選択してください。ABI・split構成の完全な判定および分割APKの一括導入は対象外です。
 
-## 保存済みファイルと旧Artifact経路
+「保存してインストール確認へ」で選択したAPKを取得・検査し、永続保存します。確認画面で「標準インストーラで開く」を押してください。Android 6はPackageInstaller.Session、7以降はFileProviderを使用。Android 8以降の初回は「この提供元を許可」を設定し、戻ってもう一度押します。6/7はOSの提供元不明アプリ設定に従います。
 
-「ZIP / APK を開く」、ファイルの共有、直接HTTPS取得も利用できます。Actionsの認証付きArtifactはサインイン済みブラウザで取得してファイル選択で開きます。ZIP内の単一APKは自動選択、複数は1件選択です。成功・失敗・キャンセルでアプリが作成したZIPと一時コピーを削除します。利用者のダウンロード元ファイルは保持します。強制終了時の一時ファイルは次回起動で清掃します。
+更新状態は実APKと端末のpackageName、数値のversionCode、署名証明書から判定します。現署名が違う場合は「署名不一致の可能性」と表示します。署名ローテーション、ABI、SDK要件など、導入可否の最終判定はOSに従います。旧版の通常の上書きは制限されます。手動でアンインストールすると対象アプリのデータが消えます。ストアにアンインストール操作はありません。自動ロールバックや設定移行はPhase 2です。
+
+## 保存・障害時
+
+保存先はアプリ専用の `files/apks/`。1 APKは128 MiBまで、1パッケージ3世代・全体24件・512 MiBまで保持します。上限時は「保存したAPK」から削除対象を選びます。自動削除はありません。ストアの保存履歴にはrepo、タグ、Asset識別子、packageName、バージョン、保存日時を記録します。インストールのキャンセル後も同じAPKを再度開けます。登録削除はAPKを保持します。
+
+403/429の利用制限は時間をおいて再試行、401/404ではrepo・権限・期限を確認して再認証してください。API認証は最初の api.github.com 宛に限定し、署名付き転送先へのAuthorizationを外します。GitHub Mobileのセッションは使用しません。1リポジトリ3,000 Release、1 Release 1,000 Assetまで。端末ストレージ不足・破損APK・署名不一致は各段階で表示します。
+
+従来のRelease共有、ファイル選択・ZIP抽出は補助機能です。アプリが作ったZIPと一時コピーは処理後に削除し、選択APKと利用者の元ファイルを保持します。
+
+## 配送・署名
+
+GitHub Actionsで単体テスト、lint、API 23/29試験、APKの署名・minSdkを検査し、SHA単位の検収用プレリリースへ添付して再取得・バイト照合します。Actions ArtifactはCI内の受け渡し用です。同じタグのAssetを別バイナリで上書きしません。
+
+固定検収鍵を使用するにはRepository Secretsの `STORE_PREVIEW_KEYSTORE_BASE64`、`STORE_PREVIEW_STORE_PASSWORD`、`STORE_PREVIEW_KEY_ALIAS`、`STORE_PREVIEW_KEY_PASSWORD` と、Repository Variable `STORE_PREVIEW_CERT_SHA256`（コロンなし16進数）を設定します。CIは証明書を照合します。固定鍵・指紋が未設定の場合はrunnerの試験用debug鍵です。ビルド間で署名が異なる場合、同一IDへの上書きはできません。
 
 ## 実機検収
 
-- Android 6〜10でプライベートReleaseを共有し、候補の表示、診断のVIEW/SEND、APK取得と署名情報を確認する。Mobileとブラウザでそれぞれ試す。
-- 権限のないトークンでの失敗と、解除・正しいトークンでの再試行を確認する。
-- OSの提供元許可とインストール／キャンセルを試し、アプリ再起動後も「保存したAPK」から開けることを確認する。
+- 公開・非公開repoを登録し、個別・一括更新、編集・削除、通信を切った状態のキャッシュ、プロセス終了後の再認証を確認。
+- 単一・複数APKのアプリ名、packageName、versionCode、導入済み版を確認。プレリリース表示を切り替え、過去版を選択。
+- 旧版・署名違いの表示を確認。Android 6/7と8以降でOS確認画面を開き、キャンセル後の保存、再起動後の再試行を確認。
 
-## 開発・組み込み
-
-JDK 17、Gradle 8.9、Android SDK 35。検証は `gradle testDebugUnitTest lintDebug assembleDebug`、エミュレータは `gradle connectedDebugAndroidTest`。ActionsでAPI 23/29を実行します。物理端末の動作とMobileが実際に渡すIntentは実機で確認してください。
-
-ReleaseLinkがURLを解析し、GitHubReleasesがRelease・Assetの取得、ReleaseAuthが認証を担当します。ホストアプリは認証を差し替えられます。Releaseから取得したAPKとローカル経路はApkStoreとInstallationを共有します。SourceReaderとArchiveは従来のファイル・ZIP経路を担当します。
+JDK 17、Gradle 8.9、Android SDK 35。ローカル検証は `gradle testDebugUnitTest lintDebug assembleDebug`、端末試験は `gradle connectedDebugAndroidTest`。エミュレータの自動試験と物理端末の検収は区別します。

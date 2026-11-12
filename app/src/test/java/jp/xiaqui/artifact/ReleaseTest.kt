@@ -65,6 +65,19 @@ class ReleaseTest {
         assertEquals("per_page=100&page=11", requests.last().url.query)
     }
 
+    @Test fun historyPaginatesAndUsesPublicationOrderIncludingPreviews() {
+        val draft = """{"draft":true}"""
+        val first = """{"id":2,"tag_name":"z","published_at":"2025-01-01T00:00:00Z","assets":[{"id":9,"name":"a.apk","size":3}]}"""
+        val second = first.replace("2025-", "2026-").replace("\"z\"", "\"a\",\"prerelease\":true").replace("\"id\":2", "\"id\":3")
+        val page = (listOf(first) + List(29) { draft }).joinToString(",", "[", "]")
+        val history = service(Reply(200,page),Reply(200,"[$second]")).history(link)
+        assertEquals(listOf("a","z"),history.map { it.tag })
+        assertTrue(history.first().preview)
+        assertTrue(requests.last().url.query.contains("page=2"))
+        for (status in listOf(401,429))
+            assertThrows(ImportFailure::class.java) { service(Reply(status)).history(link) }
+    }
+
     @Test fun binaryRedirectDropsCredentialAndChecksDigest() {
         val api = service(Reply(302, redirect="https://cdn.example.test/signed"), Reply(200,"abc"))
         val file = temp.newFile()

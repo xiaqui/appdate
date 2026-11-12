@@ -1,4 +1,4 @@
-name: Release APK preview
+name: Personal Release Store
 on:
   push:
     branches: ['work/phase1-installer']
@@ -18,22 +18,46 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
+      - name: Test, lint and build preview
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.STORE_PREVIEW_KEYSTORE_BASE64 }}
+          STORE_SIGNING_PASSWORD: ${{ secrets.STORE_PREVIEW_STORE_PASSWORD }}
+          STORE_KEY_PASSWORD: ${{ secrets.STORE_PREVIEW_KEY_PASSWORD }}
+          STORE_SIGNING_ALIAS: ${{ secrets.STORE_PREVIEW_KEY_ALIAS }}
+          EXPECTED_CERT: ${{ vars.STORE_PREVIEW_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$KEYSTORE_B64$EXPECTED_CERT" ]]; then
+            : "${KEYSTORE_B64:?missing signing key}" "${EXPECTED_CERT:?missing pinned certificate}"
+            : "${STORE_SIGNING_PASSWORD:?}" "${STORE_KEY_PASSWORD:?}" "${STORE_SIGNING_ALIAS:?}"
+            umask 077
+            export STORE_SIGNING_FILE="$RUNNER_TEMP/store-preview.keystore"
+            trap 'rm -f "$STORE_SIGNING_FILE"' EXIT
+            printf '%s' "$KEYSTORE_B64" | base64 --decode > "$STORE_SIGNING_FILE"
+          fi
+          unset KEYSTORE_B64
+          gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
       - name: Verify APK and record build identity
+        env:
+          EXPECTED_CERT: ${{ vars.STORE_PREVIEW_CERT_SHA256 }}
         shell: bash
         run: |
           apk=app/build/outputs/apk/debug/app-debug.apk
           bt="$ANDROID_HOME/build-tools/35.0.0"
-          "$bt/apksigner" verify --verbose --print-certs "$apk"
+          "$bt/apksigner" verify --verbose --print-certs "$apk" | tee "$RUNNER_TEMP/signature"
+          cert=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/signature")
+          test -n "$cert"
+          if [[ -n "$EXPECTED_CERT" ]]; then test "${cert,,}" = "${EXPECTED_CERT,,}"; fi
           "$bt/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging"
           grep -E "^(package:|sdkVersion:|targetSdkVersion:)" "$RUNNER_TEMP/badging"
           grep -Fx "sdkVersion:'23'" "$RUNNER_TEMP/badging"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          cp "$apk" ReleaseInstaller-debug.apk
-          { echo "$GITHUB_SHA"; sha256sum ReleaseInstaller-debug.apk; } >> "$GITHUB_STEP_SUMMARY"
+          cp "$apk" ReleaseStore-preview.apk
+          { echo "$GITHUB_SHA"; sha256sum ReleaseStore-preview.apk; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
-          path: ReleaseInstaller-debug.apk
+          path: ReleaseStore-preview.apk
           archive: false
           if-no-files-found: error
           retention-days: 7
@@ -70,7 +94,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: ReleaseInstaller-debug.apk
+          name: ReleaseStore-preview.apk
           path: delivery
           skip-decompress: true
       - name: Verify private Release Asset and publish preview
@@ -79,14 +103,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          apk=delivery/ReleaseInstaller-debug.apk
-          tag="pr1-preview-${GITHUB_SHA:0:12}"
+          apk=delivery/ReleaseStore-preview.apk
+          tag="store-preview-${GITHUB_SHA:0:12}"
           sha=$(sha256sum "$apk" | cut -d' ' -f1)
           if ! gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$tag" "$apk" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Release APK Installer · ${GITHUB_SHA:0:12}" --notes "PR #1 debug build. Source: $GITHUB_SHA. SHA-256: $sha"
+            gh release create "$tag" "$apk" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Release Store · ${GITHUB_SHA:0:12}" --notes "PR #1 debug build. Source: $GITHUB_SHA. SHA-256: $sha"
           fi
           mkdir -p verify
-          gh release download "$tag" -R "$GITHUB_REPOSITORY" --pattern 'ReleaseInstaller-debug.apk' --dir verify
-          cmp "$apk" verify/ReleaseInstaller-debug.apk
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" --pattern 'ReleaseStore-preview.apk' --dir verify
+          cmp "$apk" verify/ReleaseStore-preview.apk
           gh release edit "$tag" -R "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
           echo "APK SHA-256: $sha" >> "$GITHUB_STEP_SUMMARY"

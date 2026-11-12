@@ -46,6 +46,17 @@ internal fun requestMarshmallowInstall(context: Context, file: File) {
     }
 }
 
+internal fun installStatus(status: Int) = when (status) {
+    PackageInstaller.STATUS_SUCCESS -> "インストール完了。"
+    PackageInstaller.STATUS_FAILURE_ABORTED -> "インストールをキャンセルしました。"
+    PackageInstaller.STATUS_FAILURE_STORAGE -> "インストール先の容量が不足しています。"
+    PackageInstaller.STATUS_FAILURE_BLOCKED -> "提供元の許可または端末ポリシーで拒否されました。"
+    PackageInstaller.STATUS_FAILURE_CONFLICT -> "既存パッケージと競合しています。署名を確認してください。"
+    PackageInstaller.STATUS_FAILURE_INVALID -> "OSがAPKを不正と判定しました。"
+    PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> "OS・端末と互換性がありません。"
+    else -> "OSから詳しいインストール結果を取得できません。"
+}
+
 class SessionResult : BroadcastReceiver() {
     @Suppress("DEPRECATION")
     override fun onReceive(context: Context, intent: Intent) {
@@ -55,7 +66,7 @@ class SessionResult : BroadcastReceiver() {
             try { context.startActivity(prompt.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             catch (_: RuntimeException) { Toast.makeText(context, "OS確認画面を開けません。", Toast.LENGTH_LONG).show() }
         } else {
-            val message = if (status == PackageInstaller.STATUS_SUCCESS) "インストールしました。" else "インストールは完了しませんでした。APKは保存されています。"
+            val message = installStatus(status)
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
     }

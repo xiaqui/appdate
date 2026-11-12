@@ -6,12 +6,21 @@ android {
     namespace = "jp.xiaqui.artifact"
     compileSdk = 35
     defaultConfig {
-        applicationId = "jp.xiaqui.artifact"
+        applicationId = "jp.xiaqui.artifact.store.preview"
         minSdk = 23
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2"
+        versionCode = 3
+        versionName = "0.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    val keyFile = System.getenv("STORE_SIGNING_FILE")
+    if (!keyFile.isNullOrBlank()) {
+        signingConfigs.getByName("debug") {
+            storeFile = file(keyFile)
+            storePassword = System.getenv("STORE_SIGNING_PASSWORD")
+            keyAlias = System.getenv("STORE_SIGNING_ALIAS")
+            keyPassword = System.getenv("STORE_KEY_PASSWORD")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
