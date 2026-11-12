@@ -9,8 +9,7 @@ import android.widget.Toast
 import java.io.File
 
 /** Android 6's stock UI does not accept a FileProvider URI. Stage with the public session API. */
-@android.annotation.SuppressLint("UnspecifiedImmutableFlag")
-internal fun requestMarshmallowInstall(context: Context, file: File) {
+internal fun stageMarshmallowInstall(context: Context, file: File): Int {
     val installer = context.packageManager.packageInstaller
     val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
     params.setSize(file.length())
@@ -21,6 +20,20 @@ internal fun requestMarshmallowInstall(context: Context, file: File) {
                 file.inputStream().use { transfer(it, out, MAX_INPUT) }
                 session.fsync(out)
             }
+        }
+        return id
+    } catch (failure: Exception) {
+        installer.abandonSession(id)
+        throw failure
+    }
+}
+
+@android.annotation.SuppressLint("UnspecifiedImmutableFlag")
+internal fun requestMarshmallowInstall(context: Context, file: File) {
+    val installer = context.packageManager.packageInstaller
+    val id = stageMarshmallowInstall(context, file)
+    try {
+        installer.openSession(id).use { session ->
             // API 23 requires a mutable result PendingIntent so PackageInstaller can supply status.
             val callback = PendingIntent.getBroadcast(context, id, Intent(context, SessionResult::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT)

@@ -135,7 +135,10 @@ class MainActivity : Activity() {
             directory.deleteRecursively()
             if (!directory.mkdirs()) throw ImportFailure("一時領域を作成できません。")
             SourceReader(contentResolver).read(uri, staged, signal)
-            Archive(staged).inspect()
+            val index = Archive(staged).inspect()
+            if (index.standalone && index.choices.isNotEmpty() &&
+                packageManager.getPackageArchiveInfo(staged.path, 0) == null) index.copy(standalone = false)
+            else index
         }) { index ->
             when {
                 index.standalone -> persist(null)
