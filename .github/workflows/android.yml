@@ -1,0 +1,58 @@
+name: Android phase 1
+on:
+  push:
+    branches: ['work/phase1-installer']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
+      - name: Verify APK and record build identity
+        shell: bash
+        run: |
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          bt="$ANDROID_HOME/build-tools/35.0.0"
+          "$bt/apksigner" verify --verbose --print-certs "$apk"
+          "$bt/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging"
+          grep -E "^(package:|sdkVersion:|targetSdkVersion:)" "$RUNNER_TEMP/badging"
+          grep -Fx "sdkVersion:'23'" "$RUNNER_TEMP/badging"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          cp "$apk" ArtifactInstaller-debug.apk
+          { echo "$GITHUB_SHA"; sha256sum ArtifactInstaller-debug.apk; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ArtifactInstaller-debug.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
+  device:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Enable KVM
+        run: sudo chmod 666 /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          script: gradle connectedDebugAndroidTest
