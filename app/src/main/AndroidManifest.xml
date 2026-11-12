@@ -2,7 +2,7 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <queries><intent><action android:name="android.intent.action.INSTALL_PACKAGE"/><data android:scheme="content" android:mimeType="application/vnd.android.package-archive"/></intent></queries>
-    <application android:label="Artifact Installer" android:theme="@android:style/Theme.Material.Light" android:allowBackup="false" android:usesCleartextTraffic="false">
+    <application android:label="Release APK Installer" android:theme="@android:style/Theme.Material.Light" android:allowBackup="false" android:usesCleartextTraffic="false">
         <receiver android:name=".SessionResult" android:exported="false"/>
         <provider android:name=".ApkProvider" android:authorities="${applicationId}.files"
             android:exported="false" android:grantUriPermissions="true">
@@ -11,6 +11,12 @@
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="github.com" android:pathPattern="/.*/.*/releases"/>
+                <data android:pathPattern="/.*/.*/releases/.*"/>
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/>

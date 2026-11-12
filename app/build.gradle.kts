@@ -9,8 +9,8 @@ android {
         applicationId = "jp.xiaqui.artifact"
         minSdk = 23
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "0.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -21,6 +21,7 @@ android {
 }
 dependencies {
     implementation("androidx.core:core:1.13.1")
+    testImplementation("org.json:json:20240303")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

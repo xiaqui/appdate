@@ -67,7 +67,7 @@ class AndroidFlowTest {
                 instrumentation.runOnMainSync {
                     val filename = visibleTexts(activity.window.decorView).first { it.text.endsWith(".apk") }.text.toString()
                     imported = File(dir, filename)
-                    visibleTexts(activity.window.decorView).first { it.text == "標準インストーラで開く" }.performClick()
+                    visibleTexts(activity.window.decorView).first { it.text.toString() == "標準インストーラで開く" }.performClick()
                 }
                 awaitView(instrumentation, activity, "保存済みAPKは再度開けます。")
                 assertTrue(monitor.hits > 0)
@@ -89,7 +89,7 @@ class AndroidFlowTest {
     private fun awaitView(instrumentation: android.app.Instrumentation, activity: Activity, expected: String) {
         repeat(200) {
             var found = false
-            instrumentation.runOnMainSync { found = visibleTexts(activity.window.decorView).any { it.text == expected } }
+            instrumentation.runOnMainSync { found = visibleTexts(activity.window.decorView).any { it.text.toString() == expected } }
             if (found) return
             Thread.sleep(50)
         }
@@ -99,6 +99,7 @@ class AndroidFlowTest {
     @Test fun resolvesArtifactAndVersionedApkLinks() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         for (link in listOf("https://github.com/example/repo/actions/runs/1/artifacts/2",
+            "https://github.com/example/repo/releases", "https://github.com/example/repo/releases/tag/v1",
             "https://example.org/app-1.2.3.apk")) {
             val view = Intent(Intent.ACTION_VIEW, Uri.parse(link)).addCategory(Intent.CATEGORY_BROWSABLE)
                 .setPackage(context.packageName)

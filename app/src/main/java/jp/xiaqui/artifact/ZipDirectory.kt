@@ -39,3 +39,14 @@ internal fun checkDirectory(file: File) {
         if (input.filePointer != offset + length) invalid()
     }
 }
+
+/** Limit index allocations and the manifest read by PackageManager without unpacking a release APK. */
+internal fun checkReleaseApk(file: File) {
+    checkDirectory(file)
+    java.util.zip.ZipFile(file).use { zip ->
+        val entry = zip.getEntry("AndroidManifest.xml") ?: throw ImportFailure("AndroidManifest.xmlがありません。")
+        if (entry.size !in 1..8L * 1024 * 1024) throw ImportFailure("APKのマニフェストがサイズ上限外です。")
+        val count = zip.getInputStream(entry).use { transfer(it, null, entry.size) }
+        if (count != entry.size) throw ImportFailure("APKのマニフェストが破損しています。")
+    }
+}

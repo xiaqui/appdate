@@ -1,32 +1,33 @@
-# Artifact Installer（Phase 1）
+# Release APK Installer
 
-Android 6〜10向けの、ZIPから必要なAPKを選んで保存し、端末のパッケージインストーラで開く小型アプリです。
+Android 6〜10向けの試作。GitHub MobileやブラウザからプライベートReleaseを共有し、APKを保存してOS標準インストーラで開けます。
 
-## 使い方
+## 最初のインストールと使い方
 
-1. GitHub Actionsの実行ページから `ArtifactInstaller-debug.apk` を取得して開き、OSの画面でインストールします。ビルドごとに生成する試験用debug鍵を使用します。別の鍵で署名されたビルドへの更新には再インストールが必要な場合があり、アンインストールすると保存済みAPKが消えます。
-2. アプリの「ZIP / APK を開く」からダウンロード済みファイルを選択します。ファイル管理アプリの「開く」や「共有」、ブラウザのHTTPSリンク共有も利用できます。GitHubのArtifactページを受け取った場合、サインインしたブラウザでArtifactを保存し、アプリのファイル選択に戻ります。
-3. ZIP内のAPKが1個なら自動で選びます。複数ならフォルダ名を含む一覧から1個を選びます。保存先はアプリ内部の `files/apks/` です。同名ファイルを繰り返し開いても別名で残り、ホームの「保存したAPK」から再度開けます。分割APKの一括インストールには対応していません。
-4. パッケージ名、バージョン、取得できた署名証明書のSHA-256を確認し、「標準インストーラで開く」を押します。Android 8〜10で初回の許可設定が表示されたら「この提供元を許可」して戻り、もう一度ボタンを押してください。Android 6はPackageInstaller.SessionからOS確認画面を開き、Android 7以降はFileProviderの読み取り許可を標準インストーラに渡します。Android 6/7ではOS側の「提供元不明のアプリ」設定に従います。インストールまたはキャンセルはOS画面で選びます。アプリはインストール結果・上書き可否を断定しません。
+1. GitHubにログインし、このリポジトリの検収用プレリリースから **ReleaseInstaller-debug.apk** をダウンロードして端末で開きます。試作はビルドごとにdebug鍵が変わることがあり、違う鍵の旧版から更新する場合は再インストールが必要です。アンインストールすると保存済みAPKは消えます。
+2. GitHub Mobileまたはブラウザで対象Releaseの「共有」から **Release APK Installer** を選びます。対応するリンクを「開く」場合も受信できます。対象は github.com の /OWNER/REPO/releases（直近30件から選択）、/releases/tag/TAG、/releases/latest、/releases/download/TAG/NAME.apk、/releases/latest/download/NAME.apk です。latestはGitHubが指定する最新の正式Releaseを参照します。プレリリースにはタグリンクを使えます。
+3. GitHubで **対象リポジトリ限定・Contents: Read-only** のfine-grained personal access tokenを発行し、画面のリポジトリ名を確認して入力します。組織で承認が必要な場合は承認済みトークンを使います。公開Releaseは匿名でも開けます。トークンはそのプロセスのメモリ内で1リポジトリに限って再利用し、ホームの「Releaseトークンを解除」またはプロセス終了で破棄します。GitHub Mobileでのログイン状態は共有されません。
+4. APKが1件なら自動、複数ならファイル名を選択します。個別Assetリンクは名前が一致したAPKを取得します。packageName、versionName、versionCode、証明書SHA-256を確認して「標準インストーラで開く」を押します。Android 6はPackageInstaller.Session、7以降はFileProviderを使用します。Android 8以降の初回は「この提供元を許可」して戻り、ボタンを再度押してください。Android 6/7はOSの提供元不明アプリ設定に従います。
+5. OS確認画面でキャンセルしてもAPKは内部の files/apks/ に残り、ホームの「保存したAPK」から再度開けます。1ファイル128 MiBまで。同名は別々に保存します。
 
-## 入力と後片付け
+## 認証と既知の制約
 
-APK・ZIPは内容を検査します。圧縮入力と選択APKは各128 MiB、展開総量は384 MiB、ZIP索引は8 MiB、項目数は16,000、候補は256までです。異常なパス、重複項目、CRC不一致、読み取り失敗はエラーになります。アーカイブのパスを保存先に使いません。端末内の元ファイルは利用者所有のため保持します。アプリが取り込んだZIPと選択用コピーは完了・失敗・キャンセル時に削除し、強制終了後の残骸は次回起動で掃除します。保存済みAPKはアプリのデータ消去・アンインストールまで残ります。
+APIでReleaseとAsset IDを解決し、バイナリを取得します。トークンの送信先は最初の api.github.com HTTPSリクエストのみです。バイナリのHTTPS転送は最大5回、転送時にはAuthorizationを外します。宣言サイズと、GitHubが提供する場合はSHA-256も確認します。401/403/404では権限、期限、レート制限、Release・タグの有無を確認してください。認証を変更するには解除して再試行します。Release一覧は下書きを除き、Asset一覧は最大1,000件を検査します。GitHub Enterpriseや分割APKの一括インストールは対象外です。
 
-## URLと認証
+GitHub Mobileの内蔵画面や既定ブラウザがリンクを処理すると候補に出ない場合があります。共有メニューを利用してください。受信診断はaction、type、scheme、限定したhost、URI種別だけを表示します。
 
-直接バイナリを返すHTTPS URLに対応します。HTTPS転送は最大5回。HTTP、URL内のユーザー情報、GitHub ActionsのWebページは直接ダウンロードしません。GitHub MobileのセッションやCookieの転用、PAT入力・保存は実装していません。期限切れやアクセス権のないArtifactはブラウザ側で確認してください。
+## 保存済みファイルと旧Artifact経路
 
-次フェーズではGitHub Appのデバイス認証と最小限のActions読み取り権限を使用し、ホストアプリから認証済み取得実装を注入する計画です。APIのZIP取得が返す署名付き転送先へAuthorizationを引き継がず、トークンやURLクエリを診断・ログに出さない設計とします。
+「ZIP / APK を開く」、ファイルの共有、直接HTTPS取得も利用できます。Actionsの認証付きArtifactはサインイン済みブラウザで取得してファイル選択で開きます。ZIP内の単一APKは自動選択、複数は1件選択です。成功・失敗・キャンセルでアプリが作成したZIPと一時コピーを削除します。利用者のダウンロード元ファイルは保持します。強制終了時の一時ファイルは次回起動で清掃します。
 
 ## 実機検収
 
-Android 6/7（API 23〜25）、8（26/27）、9（28）、10（29）で、ファイル選択→単一/複数APK→保存→許可→OS確認→キャンセル/インストール→保存一覧を確認してください。署名取得はAPI 28で切り替えます。物理端末でのOS別検収は未実施です。
+- Android 6〜10でプライベートReleaseを共有し、候補の表示、診断のVIEW/SEND、APK取得と署名情報を確認する。Mobileとブラウザでそれぞれ試す。
+- 権限のないトークンでの失敗と、解除・正しいトークンでの再試行を確認する。
+- OSの提供元許可とインストール／キャンセルを試し、アプリ再起動後も「保存したAPK」から開けることを確認する。
 
-GitHub MobileのArtifacts画面をタップ、リンクを共有、ブラウザで開く、ダウンロード一覧から開く、の順に別々に試してください。候補に出たか、起動したか、受信画面のaction/type/scheme/host/URI種別、端末・OS・呼び出しアプリの版を記録します。URL全文、クエリ、パス、トークンは共有しないでください。対象フィルタはVIEW/SEND。直接リンクは小文字の.apk/.zip（ファイル名中のピリオド最大5個を想定）が対象です。アプリ内ブラウザで完結する場合やOSの既定アプリが開く場合、診断は受信できず、共有かファイル選択を使います。GitHub Mobileの実Intentと直接起動可否は未確認です。
+## 開発・組み込み
 
-## 開発
+JDK 17、Gradle 8.9、Android SDK 35。検証は `gradle testDebugUnitTest lintDebug assembleDebug`、エミュレータは `gradle connectedDebugAndroidTest`。ActionsでAPI 23/29を実行します。物理端末の動作とMobileが実際に渡すIntentは実機で確認してください。
 
-JDK 17、Gradle 8.9、Android SDK 35で `gradle testDebugUnitTest lintDebug assembleDebug`。端末またはエミュレータを接続して `gradle connectedDebugAndroidTest`。ActionsのAPI 23/29エミュレータでContent URI、APK検査、リンク解決を検証します。Actionsではbranchの実SHAをチェックアウトし、APKのminSdk・署名を検査して、ZIP展開不要のAPK Artifactを7日保持します。
-
-`Incoming` がIntentを解釈し、`SourceReader` はContentResolverと差し替え可能な `RemoteSource` を扱います。`GitHubAccess` で認証導線を分岐し、`Archive`、`ApkStore`、`Installation` がそれぞれZIP、保存、OSとの連携を担当します。設定変更中の読み込みは取り消し、再試行または再選択できます。外部URLは状態保存に含めません。
+ReleaseLinkがURLを解析し、GitHubReleasesがRelease・Assetの取得、ReleaseAuthが認証を担当します。ホストアプリは認証を差し替えられます。Releaseから取得したAPKとローカル経路はApkStoreとInstallationを共有します。SourceReaderとArchiveは従来のファイル・ZIP経路を担当します。
