@@ -24,3 +24,20 @@ internal fun rowFor(r: Registration, absenceKnown: Boolean, installed: (String) 
     val source = if (failed && r.fetched != 0L) "前回" else if (failed) "参考" else "最新"
     return StoreRow(name, "導入 $left → $source $right", status, if (failed) "失敗" else comparison)
 }
+
+internal fun batchSummary(repos: List<String>, check: (String) -> StoreRow?): String {
+    var ok = 0
+    var failed = 0
+    var updates = 0
+    var same = 0
+    for (repo in repos) {
+        if (Thread.currentThread().isInterrupted) throw InterruptedException()
+        val status = check(repo)?.outcome ?: continue
+        if (status == "失敗") failed++ else {
+            ok++
+            when (status) { "更新候補" -> updates++; "同一版" -> same++ }
+        }
+    }
+    if (Thread.currentThread().isInterrupted) throw InterruptedException()
+    return "成功 $ok（更新 $updates・同一 $same）／失敗 $failed"
+}

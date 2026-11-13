@@ -153,22 +153,11 @@ class StoreActivity : Activity() {
         // Only finished results are durable. A restart during this run must not imply completion.
         batch.edit().putString("summary", "前回の一括確認は未完了").commit()
         work("一括更新を確認中…", {
-            var ok = 0
-            var failed = 0
-            var updates = 0
-            var same = 0
-            for (repo in repos) {
-                if (Thread.currentThread().isInterrupted) throw InterruptedException()
-                val registration = catalog.get(repo) ?: continue
-                service.refresh(registration)
-                val updated = catalog.get(repo) ?: continue
-                if (updated.error.isNotEmpty()) failed++ else {
-                    ok++
-                    when (row(updated).outcome) { "更新候補" -> updates++; "同一版" -> same++ }
-                }
+            val summary = batchSummary(repos) { repo ->
+                catalog.get(repo)?.let(service::refresh)
+                catalog.get(repo)?.let(::row)
             }
-            if (Thread.currentThread().isInterrupted) throw InterruptedException()
-            batch.edit().putString("summary", "成功 $ok（更新 $updates・同一 $same）／失敗 $failed").commit()
+            batch.edit().putString("summary", summary).commit()
         })
     }
 

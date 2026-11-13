@@ -53,6 +53,15 @@ class StoreTest {
         assertEquals("判定不能", compareInstalled(apk,null,false))
         assertEquals("判定不能", compareInstalled(apk,apk.copy(pkg="wrong"),true))
     }
+    @Test fun bulkSummaryCountsPartialFailureWithoutMarkingItUpToDate() {
+        val outcomes = listOf("更新候補", "同一版", "失敗", "未確認")
+        assertEquals("成功 3（更新 1・同一 1）／失敗 1",
+            batchSummary(outcomes) { StoreRow("demo", "", "", it) })
+        Thread.currentThread().interrupt()
+        try { assertThrows(InterruptedException::class.java) { batchSummary(outcomes) { null } } }
+        finally { Thread.interrupted() }
+    }
+
     @Test fun quotaKeepsOldFilesUntilExplicitDeletion() {
         val dir = temp.newFolder()
         val store = ApkStore(dir)
