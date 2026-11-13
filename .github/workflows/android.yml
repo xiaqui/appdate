@@ -2,6 +2,10 @@ name: Personal Release Store
 on:
   push:
     branches: ['work/phase1-installer']
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  # Explicitly run this workflow to publish a signed preview Release.
   workflow_dispatch:
 permissions:
   contents: read
@@ -105,7 +109,7 @@ jobs:
 
   preview:
     needs: [verify, device]
-    if: github.ref == 'refs/heads/work/phase1-installer'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/work/phase1-installer'
     runs-on: ubuntu-latest
     permissions:
       contents: write
