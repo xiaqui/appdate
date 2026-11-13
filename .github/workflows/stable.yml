@@ -1,0 +1,44 @@
+name: Promote accepted APK
+on:
+  pull_request:
+    paths:
+      - '.github/release/**'
+      - '.github/workflows/stable.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/release/**'
+      - '.github/workflows/stable.yml'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish the device-accepted APK as a stable Release'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[publish-stable]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: bash .github/release/promote.sh verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+  publish:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-stable]')))
+    runs-on: ubuntu-latest
+    concurrency: stable-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: bash .github/release/promote.sh publish
+        env:
+          GH_TOKEN: ${{ github.token }}

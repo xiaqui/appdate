@@ -45,3 +45,7 @@ GitHub Actionsで単体テスト、lint、API 23/29試験、APKの署名・minSd
 JDK 17、Gradle 8.9、Android SDK 35。ローカル検証は `gradle testDebugUnitTest lintDebug assembleDebug`、端末試験は `gradle connectedDebugAndroidTest`。エミュレータの自動試験と物理端末の検収は区別します。
 
 Release・更新確認・保存日時は表示時に端末のタイムゾーンで yyyy/MM/dd HH:mm に変換します。保存したAPKはメニューの一つの画面で扱い、端末ファイルとGitHub取得分の出所を表示します。記録のない旧APKは「旧保存分」と表示し、ファイル欠落時も履歴を保持します。APK詳細では実ファイルの署名を確認できます。別applicationIdの旧Installerはアプリ専用領域が異なるため、自動移行の対象外です。
+
+## 正式Release
+
+実機検収済みのAPKを再ビルドせず昇格します。対象の版・元SHA・サイズ・APKと証明書の指紋は `.github/release/accepted.json` を参照してください。mainの **Promote accepted APK** でpublishを明示するか、配送設定更新のマージコミットに `[publish-stable]` を指定します。PRでは読み取り検証のみ行います。既存の公開Assetを差し替えず、ドラフトから再取得してビルド済みAPKとの一致を確認してから正式公開します。
