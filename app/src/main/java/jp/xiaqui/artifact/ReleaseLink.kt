@@ -12,6 +12,7 @@ internal data class ReleaseLink(val repository: String, val tag: String?, val na
         private fun encode(text: String) = URLEncoder.encode(text, "UTF-8").replace("+", "%20")
 
         fun parse(text: String): ReleaseLink? {
+            rejectCredentialUrl(text)
             val uri = runCatching { URI(text) }.getOrNull() ?: return null
             if (uri.scheme != "https" || !uri.host.equals("github.com", true) ||
                 uri.port != -1 || uri.rawUserInfo != null) return null
@@ -49,4 +50,9 @@ internal class SessionAuth : ReleaseAuth {
     fun clear() { entries.clear() }
 }
 
-internal val processAuth = SessionAuth()
+internal fun rejectCredentialUrl(raw: String, signedRedirect: Boolean = false) {
+    val decoded = runCatching { java.net.URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
+    if (Regex("(github_pat_|gh[pousr]_)", RegexOption.IGNORE_CASE).containsMatchIn(decoded) ||
+        (!signedRedirect && Regex("[?&](access_token|token|authorization|pat)=", RegexOption.IGNORE_CASE).containsMatchIn(decoded)))
+        throw ImportFailure("認証情報を含むURLは使用できません。PATは認証画面に入力してください。")
+}

@@ -27,8 +27,9 @@ internal class GitHubReleases(private val auth: ReleaseAuth,
                 connection.connectTimeout = 10000
                 connection.readTimeout = 15000
                 connection.useCaches = false
+                val token = if (hop == 0) auth.tokenFor(link.repository) else null
                 if (hop == 0) {
-                    auth.tokenFor(link.repository)?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+                    token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
                     connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
                 }
                 connection.setRequestProperty("Accept", if (binary) "application/octet-stream" else "application/vnd.github+json")
@@ -38,17 +39,31 @@ internal class GitHubReleases(private val auth: ReleaseAuth,
                         if (!binary) throw ImportFailure("Releaseの移転先URLを共有し直してください。")
                         val location = connection.getHeaderField("Location") ?: throw ImportFailure("転送先がありません。")
                         url = URL(url, location)
+                        rejectCredentialUrl(url.toString(), signedRedirect = true)
                         if (url.protocol != "https" || url.userInfo != null || url.host.isEmpty() || url.port !in listOf(-1, 443))
                             throw ImportFailure("安全なHTTPS転送先を取得できません。")
                     }
-                    403, 429 -> {
-                        if (status == 429 || connection.getHeaderField("X-RateLimit-Remaining") == "0" ||
-                            connection.getHeaderField("Retry-After") != null)
-                            throw ImportFailure("GitHubのAPI利用制限です。時間をおいて再試行してください。")
-                        throw ImportFailure("GitHub HTTP 403。Contents読取権限・組織の承認を確認してください。")
+                    else -> {
+                        val path = URL(endpoint).path.removePrefix("/repos/${link.repository}/releases")
+                        val stage = when {
+                            hop > 0 -> "APK転送先"
+                            binary -> "Release Asset本体"
+                            path.isEmpty() -> "Release一覧"
+                            path.endsWith("/assets") -> "Asset一覧"
+                            else -> "Release指定"
+                        }
+                        val mode = if (token == null) "匿名" else "認証付き"
+                        val reason = when {
+                            status == 429 || status == 403 && (connection.getHeaderField("X-RateLimit-Remaining") == "0" ||
+                                connection.getHeaderField("Retry-After") != null) -> "API利用制限。時間をおいて再試行してください。"
+                            hop > 0 -> "転送先で取得できませんでした。リンクを再取得してください。"
+                            status == 401 -> "認証が拒否されました。PATの有効期限を確認して再認証してください。"
+                            status == 403 -> "Contents読み取り権限と組織の承認を確認してください。"
+                            status == 404 -> "404だけでは不存在と閲覧権限不足を区別できません。repo・公開範囲・PAT対象repo・Release/Assetを確認してください。"
+                            else -> "通信先と取得対象を確認してください。"
+                        }
+                        throw ImportFailure("HTTP $status（$stage・$mode）。$reason")
                     }
-                    401, 404 -> throw ImportFailure("GitHub HTTP $status。トークンの期限・Contents読取権限、利用制限、Releaseの存在を確認してください。")
-                    else -> throw ImportFailure("GitHubから取得できませんでした（HTTP $status）。")
                 }
             } finally { connection.disconnect() }
         }
@@ -93,7 +108,8 @@ internal class GitHubReleases(private val auth: ReleaseAuth,
                 apks.sumOf { 192L + 4L * (it.name.length + it.digest.orEmpty().length + it.updated.length) }
             if (retainedBytes > 512L * 1024) throw ImportFailure("履歴の端末保存上限を超えています。以前の取得情報を保持します。")
             if (apks.isNotEmpty()) add(StoreRelease(id, row.getString("tag_name"),
-                row.getString("published_at"), row.optBoolean("prerelease"), apks))
+                row.getString("published_at"), row.optBoolean("prerelease"), apks,
+                row.optString("target_commitish").takeIf { it.matches(Regex("[0-9a-fA-F]{40}")) }.orEmpty()))
         }
     }.distinctBy { it.id }.sortedByDescending { it.published }
 

@@ -56,8 +56,10 @@ internal object GitHubAccess {
 
 internal class DirectHttps : RemoteSource {
     override fun download(url: URL, destination: File) {
+        rejectCredentialUrl(url.toString())
         var next = url
-        repeat(6) {
+        repeat(6) { hop ->
+            rejectCredentialUrl(next.toString(), signedRedirect = hop > 0)
             if (!next.protocol.equals("https", true) || next.userInfo != null || next.host.isEmpty())
                 throw ImportFailure("認証情報を含まないHTTPSリンクを指定してください。")
             if (GitHubAccess.needsBrowser(next)) throw ImportFailure("GitHubにサインインしたブラウザでArtifactを保存し、「ZIP / APK を開く」で選んでください。")

@@ -1,7 +1,7 @@
 name: Personal Release Store
 on:
   push:
-    branches: ['work/phase1-installer']
+    branches: ['work/phase1-installer', 'work/post-phase1']
   workflow_dispatch:
 permissions:
   contents: read
@@ -38,6 +38,20 @@ jobs:
           fi
           unset KEYSTORE_B64
           gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
+      - name: Check live GitHub Release responses
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://api.github.com/repos
+          probe() { curl -sS -o /dev/null -w '%{http_code}' "$@"; }
+          public=$(probe "$base/actions/checkout/releases?per_page=1")
+          private=$(probe "$base/$GITHUB_REPOSITORY/releases?per_page=1")
+          allowed=$(probe -H "Authorization: Bearer $GH_TOKEN" "$base/$GITHUB_REPOSITORY/releases?per_page=1")
+          absent=$(probe -H "Authorization: Bearer $GH_TOKEN" "$base/$GITHUB_REPOSITORY/releases/tags/nonexistent-diagnostic-$GITHUB_SHA")
+          echo "public-anonymous=$public repository-anonymous=$private repository-authorized=$allowed missing-tag=$absent"
+          test "$allowed" = 200 && test "$absent" = 404
       - name: Verify APK and record build identity
         env:
           EXPECTED_CERT: ${{ vars.STORE_PREVIEW_CERT_SHA256 }}
@@ -83,11 +97,16 @@ jobs:
         with:
           api-level: ${{ matrix.api }}
           arch: x86_64
-          script: gradle connectedDebugAndroidTest
+          script: bash .github/workflows/device-checks.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: seven-rows-api-${{ matrix.api }}
+          path: seven-rows.png
+          retention-days: 7
 
   preview:
     needs: [verify, device]
-    if: github.ref == 'refs/heads/work/phase1-installer'
+    if: github.ref == 'refs/heads/work/phase1-installer' || github.ref == 'refs/heads/work/post-phase1'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -107,7 +126,7 @@ jobs:
           tag="store-preview-${GITHUB_SHA:0:12}"
           sha=$(sha256sum "$apk" | cut -d' ' -f1)
           if ! gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$tag" "$apk" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Release Store · ${GITHUB_SHA:0:12}" --notes "PR #1 debug build. Source: $GITHUB_SHA. SHA-256: $sha"
+            gh release create "$tag" "$apk" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Release Store · ${GITHUB_SHA:0:12}" --notes "Release Store preview. Source: $GITHUB_SHA. SHA-256: $sha"
           fi
           mkdir -p verify
           gh release download "$tag" -R "$GITHUB_REPOSITORY" --pattern 'ReleaseStore-preview.apk' --dir verify

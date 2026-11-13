@@ -17,7 +17,8 @@ open class MainActivity : Activity() {
     private var task: Future<*>? = null
     private var generation = 0
     private var source: Uri? = null
-    private val releases = GitHubReleases(auth)
+    private val auth by lazy { StoredAuth(this) }
+    private val releases by lazy { GitHubReleases(auth) }
     private var diagnostic = ""
     private var saved: File? = null
     private var details = ""
@@ -44,7 +45,7 @@ open class MainActivity : Activity() {
             diagnostic = state?.getString("diagnostic").orEmpty()
             showSaved(previous)
         } else if (state != null) {
-            source = state.getParcelable<Uri>("source") ?: runCatching { Incoming.uri(intent) }.getOrNull()
+            source = runCatching { (state.getParcelable<Uri>("source") ?: Incoming.uri(intent))?.also { rejectCredentialUrl(it.toString()) } }.getOrNull()
             diagnostic = state?.getString("diagnostic").orEmpty()
             home("読み込みを再開できます。")
         } else if (this is SavedActivity) {
@@ -85,7 +86,7 @@ open class MainActivity : Activity() {
         page("Release APK Installer")
         text(message)
         if (source != null) button("再試行") { load() }
-        button("Releaseトークンを解除") { auth.clear(); home("認証を解除しました。") }
+        button("全repoの認証を解除") { try { auth.clear(); home("認証を解除しました。") } catch (e: ImportFailure) { home(e.message.orEmpty()) } }
         button("ZIP / APK を開く") {
             launch(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), PICK)
         }
@@ -135,11 +136,13 @@ open class MainActivity : Activity() {
         val uri = source ?: return
         saved = null
         val link = try { ReleaseLink.parse(uri.toString()) } catch (e: ImportFailure) {
+            source = null
             home(e.message.orEmpty())
             return
         }
         if (link != null) {
-            if (auth.tokenFor(link.repository) == null) credentials(link) else openRelease(link)
+            try { if (auth.tokenFor(link.repository) == null) credentials(link) else openRelease(link) }
+            catch (e: ImportFailure) { home(e.message.orEmpty()) }
             return
         }
         val directory = session
@@ -171,7 +174,7 @@ open class MainActivity : Activity() {
     private fun credentials(link: ReleaseLink) {
         page("GitHub Release 認証")
         text(link.repository)
-        text("対象リポジトリのContents読み取り権限を持つfine-grained PATを入力してください。認証はアプリのプロセス終了まで有効です。")
+        text("対象リポジトリのContents読み取り権限を持つfine-grained PATを入力してください。この端末に暗号化保存します。")
         val field = EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
             hint = "アクセストークン"
@@ -185,7 +188,7 @@ open class MainActivity : Activity() {
             if (!Regex("[A-Za-z0-9_]{1,500}").matches(token)) field.error = "トークンを確認してください。"
             else {
                 field.text.clear()
-                auth.use(link.repository, token)
+                try { auth.use(link.repository, token) } catch (e: ImportFailure) { field.error = e.message; return@button }
                 openRelease(link)
             }
         }
@@ -320,7 +323,6 @@ open class MainActivity : Activity() {
     }
 
     companion object {
-        private val auth = processAuth
         private var started = false
         private const val PICK = 1
         private const val SETTINGS = 2

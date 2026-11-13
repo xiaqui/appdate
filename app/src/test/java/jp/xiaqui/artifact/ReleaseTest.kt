@@ -78,6 +78,28 @@ class ReleaseTest {
             assertThrows(ImportFailure::class.java) { service(Reply(status)).history(link) }
     }
 
+    @Test fun diagnosticsSeparateAnonymousDeniedAbsentAndInvalidAuth() {
+        for (token in listOf(false, true)) {
+            if (!token) auth.clear() else auth.use(link.repository, "fixtureSecret")
+            val e = assertThrows(ImportFailure::class.java) { service(Reply(404)).history(link) }
+            assertTrue(e.message!!.contains(if (token) "認証付き" else "匿名"))
+            assertTrue(e.message!!.contains("Release一覧"))
+            assertFalse(e.message!!.contains("fixtureSecret"))
+        }
+        val missing = assertThrows(ImportFailure::class.java) { service(Reply(404)).assets(link) }
+        assertTrue(missing.message!!.contains("Release指定"))
+        for (status in listOf(401,403,429)) {
+            val e = assertThrows(ImportFailure::class.java) { service(Reply(status)).history(link) }
+            assertTrue(e.message!!.contains("HTTP $status"))
+        }
+        auth.clear()
+        assertTrue(service(Reply(200, "[]")).history(link).isEmpty())
+        for (url in listOf("$base?access_token=fake","$base?x=github_pat_fixture","https://example.test/%67hp_fixture")) {
+            assertThrows(ImportFailure::class.java) { ReleaseLink.parse(url) }
+            assertThrows(ImportFailure::class.java) { repoName(url) }
+        }
+    }
+
     @Test fun binaryRedirectDropsCredentialAndChecksDigest() {
         val api = service(Reply(302, redirect="https://cdn.example.test/signed"), Reply(200,"abc"))
         val file = temp.newFile()

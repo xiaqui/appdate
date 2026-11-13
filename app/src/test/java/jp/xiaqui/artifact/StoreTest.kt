@@ -30,6 +30,20 @@ class StoreTest {
         assertEquals(listOf(row), restored.visible)
         assertNotEquals(x.identity(), x.copy(updated="changed").identity())
     }
+    @Test fun compactVersionsSeparateLastSuccessFromFailureAndAmbiguity() {
+        val a = ReleaseApk(1, "demo.apk", 2, "abc")
+        val h = StoreRelease(3, "hidden-tag", "2026", true, listOf(a))
+        val r = Registration("o/r",true,"1",10,"",listOf(h),mapOf(a.identity() to apk),20)
+        assertEquals("同一版",rowFor(r,true) { apk }.status)
+        val failed = rowFor(r.copy(error="HTTP 404 private detail"),true) { apk }
+        assertTrue(failed.versions.contains("前回 v9 (9)"))
+        assertEquals("確認失敗 HTTP 404",failed.status)
+        val multiple = rowFor(r.copy(history=listOf(h.copy(assets=listOf(a,a.copy(id=2))))),true) { apk }
+        assertTrue(multiple.versions.contains("最新 未確認"))
+        assertEquals("複数APK",multiple.status)
+        val legacy = org.json.JSONObject(CatalogCodec.encode(r)).apply { remove("checked") }
+        assertEquals(0L,CatalogCodec.decode(legacy.toString()).checked)
+    }
     @Test fun versionCodeAndSignerDetermineStatus() {
         assertEquals("更新候補", compareInstalled(apk, apk.copy(version="v100",code=1),true))
         assertEquals("同一版", compareInstalled(apk,apk,true))

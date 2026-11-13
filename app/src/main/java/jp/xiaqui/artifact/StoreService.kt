@@ -14,7 +14,7 @@ internal fun storeError(e: Exception) = when {
 }
 
 internal class StoreService(private val context: Context, val catalog: Catalog,
-    private val api: GitHubReleases = GitHubReleases(processAuth)) {
+    private val api: GitHubReleases = GitHubReleases(StoredAuth(context))) {
     val dir = File(context.filesDir, "apks")
     private val ledger = context.getSharedPreferences("saved-release-v1", Context.MODE_PRIVATE)
     private val temp = File(context.cacheDir, "store-imports")
@@ -50,12 +50,17 @@ internal class StoreService(private val context: Context, val catalog: Catalog,
                     errors += "${a.name}: ${storeError(e)}"
                 }
             }
-            val retained = history.flatMap { it.assets }.map { it.identity() }.toSet()
-            catalog.update(r) { it.copy(history = history, fetched = System.currentTimeMillis(),
-                error = errors.joinToString("\n"), inspected = (it.inspected + known).filterKeys { k -> k in retained }) }
+            if (Thread.currentThread().isInterrupted) throw InterruptedException()
+            val now = System.currentTimeMillis()
+            catalog.update(r) {
+                val snapshot = if (errors.isEmpty() || it.fetched == 0L) history else it.history
+                val retained = snapshot.flatMap { h -> h.assets }.map { a -> a.identity() }.toSet()
+                it.copy(history = snapshot, checked = now, fetched = if (errors.isEmpty()) now else it.fetched,
+                    error = errors.joinToString("\n"), inspected = (it.inspected + known).filterKeys(retained::contains))
+            }
         } catch (e: Exception) {
             if (e is InterruptedException) throw e
-            catalog.update(r) { it.copy(error = storeError(e)) }
+            catalog.update(r) { it.copy(error = storeError(e), checked = System.currentTimeMillis()) }
         }
     }
 
