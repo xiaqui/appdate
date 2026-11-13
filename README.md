@@ -30,7 +30,9 @@ GitHub Releasesを配布元として、登録した複数のpublic/privateリポ
 
 GitHub Actionsで単体テスト、lint、API 23/29試験、APKの署名・minSdkを検査し、SHA単位の検収用プレリリースへ添付して再取得・バイト照合します。Actions ArtifactはCI内の受け渡し用です。同じタグのAssetを別バイナリで上書きしません。
 
-固定検収鍵を使用するにはRepository Secretsの `STORE_PREVIEW_KEYSTORE_BASE64`、`STORE_PREVIEW_STORE_PASSWORD`、`STORE_PREVIEW_KEY_ALIAS`、`STORE_PREVIEW_KEY_PASSWORD` と、Repository Variable `STORE_PREVIEW_CERT_SHA256`（コロンなし16進数）を設定します。CIは証明書を照合します。固定鍵・指紋が未設定の場合はrunnerの試験用debug鍵です。ビルド間で署名が異なる場合、同一IDへの上書きはできません。
+署名は他のAndroidアプリと共通のGradle環境変数 `ANDROID_KEYSTORE_FILE`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` を使用します。ActionsはRepository Secrets `KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD` を受け取り、キーストアを一時復元します。既存の `STORE_PREVIEW_*` Secretsも互換入力として受け付けます。署名Secretsが不足している場合は配布ビルドを失敗させ、runnerの一時debug鍵によるRelease公開を禁止します。任意のRepository Variable `STORE_PREVIEW_CERT_SHA256` を設定すると署名指紋を固定検証できます。
+
+APKの通常配送先はGitHub Releasesです。Release Storeで取得・更新し、GitHub Actions ArtifactやGoogle Driveを通常配送には使いません。既存インストール版と署名が異なる場合、同じapplicationIdでは上書き更新できません。
 
 ## 実機検収
 
