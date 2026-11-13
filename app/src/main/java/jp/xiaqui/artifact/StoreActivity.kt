@@ -10,8 +10,6 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.*
 import java.io.File
-import java.text.DateFormat
-import java.util.Date
 import java.util.concurrent.Executors
 
 class StoreActivity : Activity() {
@@ -21,7 +19,10 @@ class StoreActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
     private var selected: String? = null
     private var releaseId: Long? = null
+    private val vault by lazy { StoredAuth(this) }
+    private val batch by lazy { getSharedPreferences("batch-result", MODE_PRIVATE) }
     private var busy = false
+    private var settings = false
     private var shelf = false
     private var offset = 0
     private val pad get() = (16 * resources.displayMetrics.density).toInt()
@@ -34,13 +35,15 @@ class StoreActivity : Activity() {
         selected = state?.getString("repo")
         releaseId = state?.takeIf { it.containsKey("release") }?.getLong("release")
         offset = state?.getInt("offset") ?: 0
-        shelf = state?.getBoolean("shelf") == true
+        shelf = state?.getBoolean("shelf") ?: intent.getBooleanExtra("shelf", false)
+        settings = state?.getBoolean("settings") ?: intent.getBooleanExtra("settings", false)
     }
     override fun onSaveInstanceState(out: Bundle) {
         super.onSaveInstanceState(out)
         out.putInt("offset", offset)
         out.putString("repo", selected)
         releaseId?.let { out.putLong("release", it) }
+        out.putBoolean("settings", settings)
         out.putBoolean("shelf", shelf)
     }
     override fun onResume() { super.onResume(); if (!busy) render() }
@@ -93,16 +96,69 @@ class StoreActivity : Activity() {
             appendLine(names.ifBlank { "アプリ名未確認" } + " · " + r.repo)
             if (packages.size > 1) appendLine("複数パッケージ")
             if (latest != null) {
-                appendLine("最新APK · ${latest.tag} ${if (latest.preview) "（プレリリース）" else "（正式版）"}")
+                appendLine((if (r.error.isEmpty()) "最新APK" else "保存済み取得情報") + " · ${latest.tag} ${if (latest.preview) "（プレリリース）" else "（正式版）"}")
                 assets.take(4).forEach { a ->
                     val info = r.inspected[a.identity()]
                     appendLine(a.name + " · " + (info?.let { "${it.pkg} ${it.version} (${it.code}) / ${Installation.status(this@StoreActivity, it)}" } ?: "未解析・判定不能"))
                 }
                 if (assets.size > 4) appendLine("ほか ${assets.size - 4} 件")
             } else appendLine(if (r.fetched == 0L) "更新未確認" else "対象APKなし")
-            append("最終取得 " + if (r.fetched == 0L) "—" else DateFormat.getDateTimeInstance().format(Date(r.fetched)))
+            appendLine("最終成功 " + stamp(r.fetched))
+            append("今回の確認 " + stamp(r.checked) + " · " + when {
+                r.error.isNotEmpty() -> "失敗"
+                r.checked > 0 -> "成功"
+                else -> "未記録"
+            })
             if (r.error.isNotEmpty()) append("\n取得失敗 · ${r.error}")
         }
+    }
+
+    private fun stamp(time: Long) = StoreTime.local(time)
+    private fun row(r: Registration) = rowFor(r, android.os.Build.VERSION.SDK_INT <= 29) { Installation.installed(this, it) }
+    private fun addRow(r: Registration) {
+        val info = row(r)
+        val item = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            minimumHeight = pad * 3
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(pad / 2, pad / 4, pad / 2, pad / 4)
+            isFocusable = true
+            val color = android.util.TypedValue()
+            theme.resolveAttribute(android.R.attr.selectableItemBackground, color, true)
+            setBackgroundResource(color.resourceId)
+            setOnClickListener { selected = r.repo; offset = 0; render() }
+        }
+        item.addView(TextView(this).apply {
+            text = info.name; textSize = 16f; setTypeface(typeface, Typeface.BOLD)
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        item.addView(TextView(this).apply {
+            text = if (info.status == "未導入") info.versions else "${info.versions}　${info.status}"
+            textSize = 14f
+        })
+        item.contentDescription = "${info.name}、${info.versions}、${info.status}"
+        panel.addView(item)
+    }
+
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
+        menu.add("設定").setOnMenuItemClickListener { if (!busy) { settings = true; shelf = false; render() }; true }
+        menu.add("保存したAPK").setOnMenuItemClickListener { if (!busy) { settings = false; shelf = true; render() }; true }
+        menu.add("端末のZIP / APKを開く").setOnMenuItemClickListener {
+            if (!busy) startActivity(Intent(this, MainActivity::class.java)); true
+        }
+        return true
+    }
+
+    private fun checkAll(repos: List<String>) {
+        // Only finished results are durable. A restart during this run must not imply completion.
+        batch.edit().putString("summary", "前回の一括確認は未完了").commit()
+        work("一括更新を確認中…", {
+            val summary = batchSummary(repos) { repo ->
+                catalog.get(repo)?.let(service::refresh)
+                catalog.get(repo)?.let(::row)
+            }
+            batch.edit().putString("summary", summary).commit()
+        })
     }
 
     private fun <T> itemsPage(items: List<T>, draw: (T) -> Unit) {
@@ -113,6 +169,12 @@ class StoreActivity : Activity() {
         if (start + pageSize < items.size) button("次の20件") { offset = start + pageSize; render() }
     }
     private fun render() {
+        if (settings) {
+            page("認証設定")
+            label("共通PATは権限のある全repoで利用します。公開Releaseは原則匿名です。新しいprivate repoはGitHub側でトークンの対象に追加し、必要なら組織の承認を確認してください。期限切れ・失効時は新しいPATを登録してください。")
+            button("共通PATの登録・変更・解除") { auth(null) }
+            return
+        }
         if (shelf) { library(); return }
         val r = selected?.let(catalog::get)
         if (r != null) {
@@ -123,18 +185,19 @@ class StoreActivity : Activity() {
             label(if (r.previews) "最新の対象：正式版＋プレリリース" else "最新の対象：正式版のみ")
             label(latestSummary(r))
             button("更新を確認 / 再試行") { refresh(listOf(r)) }
-            button("認証・再認証") { auth(r) }
+            button("個別PATの設定・再認証") { auth(r) }
             button("登録を編集") { edit(r) }
             label("Release履歴", true)
             itemsPage(r.visible) { h ->
-                button("${h.tag} · ${if (h.preview) "プレリリース" else "正式版"}\n${h.published} · APK ${h.assets.size} 件") {
+                button("${h.tag} · ${if (h.preview) "プレリリース" else "正式版"}\n${StoreTime.published(h.published)} · APK ${h.assets.size} 件") {
                     releaseId = h.id; offset = 0; render()
                 }
             }
             button("登録を削除") {
                 AlertDialog.Builder(this).setMessage("${r.repo}の登録と取得キャッシュを削除します。保存したAPKは残ります。")
                     .setNegativeButton("戻る", null).setPositiveButton("登録を削除") { _, _ ->
-                        if (catalog.remove(r.repo)) { processAuth.forget(r.repo); selected = null }
+                        try { vault.forget(r.repo); if (catalog.remove(r.repo)) selected = null }
+                        catch (e: ImportFailure) { notice(e.message.orEmpty()) }
                         render()
                     }.show()
             }
@@ -142,19 +205,22 @@ class StoreActivity : Activity() {
         }
         selected = null
         page("アプリ一覧")
-        button("リポジトリを登録") { edit(null) }
         val registrations = catalog.names()
-        if (registrations.isNotEmpty()) button("すべての更新を確認") { work("更新を確認中…", { registrations.forEach { repo ->
-            if (Thread.currentThread().isInterrupted) throw InterruptedException()
-            catalog.get(repo)?.let(service::refresh)
-        } }) }
-        itemsPage(registrations) { repo ->
-            val entry = catalog.get(repo) ?: return@itemsPage
-            label(latestSummary(entry))
-            button("${entry.repo} の更新・過去版") { selected = entry.repo; offset = 0; render() }
+        val actions = LinearLayout(this).apply {
+            orientation = if (resources.configuration.fontScale > 1.4f ||
+                resources.configuration.screenWidthDp < 320) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         }
-        button("保存したAPK") { shelf = true; render() }
-        button("端末のZIP / APKを開く") { startActivity(Intent(this, MainActivity::class.java)) }
+        fun action(name: String, click: () -> Unit) {
+            val control = Button(this).apply { text = name; isAllCaps = false; setOnClickListener { click() } }
+            if (actions.orientation == LinearLayout.HORIZONTAL)
+                actions.addView(control, LinearLayout.LayoutParams(0, -2, 1f))
+            else actions.addView(control)
+        }
+        action("登録追加") { edit(null) }
+        if (registrations.isNotEmpty()) action("一括更新確認") { checkAll(registrations) }
+        panel.addView(actions)
+        batch.getString("summary", null)?.let { label(it) }
+        itemsPage(registrations) { repo -> catalog.get(repo)?.let(::addRow) }
     }
 
     private fun edit(r: Registration?) {
@@ -168,8 +234,9 @@ class StoreActivity : Activity() {
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 try {
-                    val updated = catalog.register(r?.repo, field.text.toString(), preview.isChecked)
-                    if (r != null && r.repo != updated.repo) processAuth.forget(r.repo)
+                    val name = repoName(field.text.toString())
+                    if (r != null && r.repo != name && catalog.get(name) == null) vault.forget(r.repo)
+                    val updated = catalog.register(r?.repo, name, preview.isChecked)
                     selected = updated.repo; releaseId = null
                     dialog.dismiss(); render()
                 } catch (e: ImportFailure) { field.error = e.message }
@@ -178,23 +245,28 @@ class StoreActivity : Activity() {
         dialog.show()
     }
 
-    private fun auth(r: Registration) {
+    private fun auth(r: Registration?) {
         val field = EditText(this).apply {
             hint = "fine-grained PAT"; setSingleLine(); isSaveEnabled = false
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             if (android.os.Build.VERSION.SDK_INT >= 26) importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
         }
-        val dialog = AlertDialog.Builder(this).setTitle(r.repo)
-            .setMessage("Contents読み取り権限。トークンはプロセス終了までこのリポジトリ専用で保持します。")
-            .setView(field).setNegativeButton("戻る", null).setNeutralButton("認証を解除") { _,_ -> processAuth.forget(r.repo) }
-            .setPositiveButton("認証して確認", null).create()
+        val dialog = AlertDialog.Builder(this).setTitle(r?.repo ?: "共通PAT")
+            .setMessage("Contents読み取り権限。端末内に暗号化保存します。個別PATを解除すると共通PATに戻ります。")
+            .setView(field).setNegativeButton("戻る", null).setNeutralButton("認証を解除") { _,_ -> try { if (r == null) vault.forgetCommon() else vault.forget(r.repo) } catch (e: ImportFailure) { notice(e.message.orEmpty()) } }
+            .setPositiveButton(if (r == null) "保存" else "認証して確認", null).create()
         dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         dialog.setOnShowListener {
             dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val token = field.text.toString().trim()
                 if (!Regex("[A-Za-z0-9_]{1,500}").matches(token)) field.error = "トークンを確認してください。"
-                else { processAuth.use(r.repo, token); field.text.clear(); dialog.dismiss(); refresh(listOf(r)) }
+                else try {
+                    if (r == null) vault.useCommon(token) else vault.use(r.repo, token)
+                    field.text.clear(); dialog.dismiss()
+                    if (r != null) refresh(listOf(r)) else render()
+                }
+                catch (e: ImportFailure) { field.error = e.message }
             }
         }
         dialog.show()
@@ -205,10 +277,13 @@ class StoreActivity : Activity() {
     })
     private fun assets(r: Registration, h: StoreRelease) {
         page(h.tag)
-        label(r.repo + " · " + h.published)
+        label(r.repo + " · " + StoreTime.published(h.published))
+        label("Release対象コミット " + h.commit.ifBlank { "未提供" })
         label("ABIの適合は未判定。分割APKの一括導入は対象外です。")
         itemsPage(h.assets) { a ->
             label(a.name, true)
+            label("Asset ID ${a.id} · SHA-256 ${a.digest ?: "未提供"}")
+            label("同一版はversionCodeの比較です。バイナリの一致はSHA-256で確認してください。")
             val meta = r.inspected[a.identity()]
             label(meta?.let { "${it.summary}\n${Installation.status(this, it)}" } ?: "未解析 · packageName / versionCode 不明")
             if (meta == null) button("APK情報を確認") { work("APKを解析中…", { service.inspect(r, a) }) }
@@ -221,13 +296,14 @@ class StoreActivity : Activity() {
     private fun library() {
         page("保存したAPK")
         label("1パッケージ3世代、全24件・512 MiBまで。削除する世代は自分で選べます。")
-        val files = service.dir.listFiles().orEmpty().filter { it.isFile }.sortedByDescending { it.lastModified() }
+        val files = service.shelf.entries()
         if (files.isEmpty()) label("保存したAPKはありません。")
         files.forEach { file ->
-            label(service.provenance(file))
-            button("標準インストーラで開く") { open(file) }
+            label(service.shelf.describe(file))
+            if (!file.isFile) return@forEach
+            button("APK詳細・再インストール") { open(file) }
             button("この保存ファイルを削除") {
-                AlertDialog.Builder(this).setMessage(service.provenance(file)).setNegativeButton("戻る", null)
+                AlertDialog.Builder(this).setMessage(service.shelf.describe(file)).setNegativeButton("戻る", null)
                     .setPositiveButton("APKを削除") { _, _ -> work("削除中…", { service.delete(file) }) }.show()
             }
         }
@@ -237,6 +313,7 @@ class StoreActivity : Activity() {
         offset = 0
         when {
             busy -> { executor.shutdownNow(); finish() }
+            settings -> { settings = false; render() }
             shelf -> { shelf = false; render() }
             releaseId != null -> { releaseId = null; render() }
             selected != null -> { selected = null; render() }

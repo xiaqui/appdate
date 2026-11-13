@@ -78,6 +78,48 @@ class ReleaseTest {
             assertThrows(ImportFailure::class.java) { service(Reply(status)).history(link) }
     }
 
+    @Test fun diagnosticsSeparateAnonymousDeniedAbsentAndInvalidAuth() {
+        for (token in listOf(false, true)) {
+            if (!token) auth.clear() else auth.use(link.repository, "fixtureSecret")
+            val e = assertThrows(ImportFailure::class.java) { service(Reply(404)).history(link) }
+            assertTrue(e.message!!.contains(if (token) "認証付き" else "匿名"))
+            assertTrue(e.message!!.contains("Release一覧"))
+            assertFalse(e.message!!.contains("fixtureSecret"))
+        }
+        val missing = assertThrows(ImportFailure::class.java) { service(Reply(404)).assets(link) }
+        assertTrue(missing.message!!.contains("Release指定"))
+        for (status in listOf(401,403,429)) {
+            val e = assertThrows(ImportFailure::class.java) { service(Reply(status)).history(link) }
+            assertTrue(e.message!!.contains("HTTP $status"))
+        }
+        auth.clear()
+        assertTrue(service(Reply(200, "[]")).history(link).isEmpty())
+        for (url in listOf("$base?access_token=fake","$base?x=github_pat_fixture","https://example.test/%67hp_fixture")) {
+            assertThrows(ImportFailure::class.java) { ReleaseLink.parse(url) }
+            assertThrows(ImportFailure::class.java) { repoName(url) }
+        }
+    }
+
+    @Test fun commonCredentialOnlyOnApiChallengeAndNeverOnRedirect() {
+        val shared = object : ReleaseAuth {
+            override fun tokenFor(repository: String) = if (repository == "o/exception") "override" else null
+            override fun commonToken() = "shared"
+        }
+        fun run(repo: String, vararg replies: Reply): List<String?> {
+            val seen = mutableListOf<Exchange>()
+            val next = replies.iterator()
+            GitHubReleases(shared) { Exchange(it,next.next()).also(seen::add) }
+                .download(link.copy(repository=repo), ReleaseApk(9,"app.apk",3,null),temp.newFile())
+            return seen.map { it.getRequestProperty("Authorization") }
+        }
+        assertEquals(listOf(null),run("o/public",Reply(200,"abc")))
+        for (repo in listOf("o/first","o/new")) {
+            assertEquals(listOf(null,"Bearer shared",null),run(repo,Reply(404),
+                Reply(302,redirect="https://cdn.example.test/signed"),Reply(200,"abc")))
+        }
+        assertEquals(listOf("Bearer override"),run("o/exception",Reply(200,"abc")))
+    }
+
     @Test fun binaryRedirectDropsCredentialAndChecksDigest() {
         val api = service(Reply(302, redirect="https://cdn.example.test/signed"), Reply(200,"abc"))
         val file = temp.newFile()

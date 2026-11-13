@@ -7,13 +7,13 @@ import java.net.URI
 import java.util.UUID
 
 internal data class StoreRelease(val id: Long, val tag: String, val published: String,
-    val preview: Boolean, val assets: List<ReleaseApk>)
+    val preview: Boolean, val assets: List<ReleaseApk>, val commit: String = "")
 internal data class ApkInfo(val pkg: String, val label: String, val version: String, val code: Long, val signer: String) {
     val summary get() = "$label · $pkg\n$version ($code)"
 }
 internal data class Registration(val repo: String, val previews: Boolean, val revision: String,
     val fetched: Long = 0, val error: String = "", val history: List<StoreRelease> = emptyList(),
-    val inspected: Map<String, ApkInfo> = emptyMap()) {
+    val inspected: Map<String, ApkInfo> = emptyMap(), val checked: Long = 0) {
     val link get() = ReleaseLink(repo, null, null, true)
     val visible get() = history.filter { previews || !it.preview }
 }
@@ -21,6 +21,7 @@ internal data class Registration(val repo: String, val previews: Boolean, val re
 internal fun ReleaseApk.identity() = "$id:$size:${digest.orEmpty()}:$updated"
 
 internal fun repoName(raw: String): String {
+    rejectCredentialUrl(raw)
     val value = raw.trim()
     val slug = if (value.startsWith("https://")) {
         val uri = runCatching { URI(value) }.getOrNull() ?: throw ImportFailure("GitHub URLを確認してください。")
@@ -58,12 +59,12 @@ internal object CatalogCodec {
             release.assets.forEach { a -> assets.put(JSONObject().put("id", a.id).put("name", a.name)
                 .put("size", a.size).put("digest", a.digest).put("updated", a.updated)) }
             histories.put(JSONObject().put("id", release.id).put("tag", release.tag).put("published", release.published)
-                .put("preview", release.preview).put("assets", assets))
+                .put("commit", release.commit).put("preview", release.preview).put("assets", assets))
         }
         val inspected = JSONObject()
         r.inspected.forEach { (key, info) -> inspected.put(key, info.json()) }
         return JSONObject().put("repo", r.repo).put("previews", r.previews).put("revision", r.revision)
-            .put("fetched", r.fetched).put("error", r.error).put("history", histories).put("inspected", inspected).toString()
+            .put("checked", r.checked).put("fetched", r.fetched).put("error", r.error).put("history", histories).put("inspected", inspected).toString()
     }
     fun decode(raw: String): Registration {
         val j = JSONObject(raw)
@@ -72,8 +73,8 @@ internal object CatalogCodec {
             j.getLong("fetched"), j.getString("error"), j.getJSONArray("history").mapRows { h ->
                 StoreRelease(h.getLong("id"), h.getString("tag"), h.getString("published"), h.getBoolean("preview"),
                     h.getJSONArray("assets").mapRows { a -> ReleaseApk(a.getLong("id"), a.getString("name"),
-                        a.getLong("size"), a.optString("digest").ifEmpty { null }, a.optString("updated")) })
-            }, inspected.keys().asSequence().associateWith { metadata(inspected.getJSONObject(it)) })
+                        a.getLong("size"), a.optString("digest").ifEmpty { null }, a.optString("updated")) }, h.optString("commit"))
+            }, inspected.keys().asSequence().associateWith { metadata(inspected.getJSONObject(it)) }, j.optLong("checked", 0))
     }
 }
 

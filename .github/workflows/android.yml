@@ -32,6 +32,7 @@ jobs:
           : "${ANDROID_KEYSTORE_PASSWORD:?missing keystore password}"
           : "${ANDROID_KEY_ALIAS:?missing key alias}"
           : "${ANDROID_KEY_PASSWORD:?missing key password}"
+          test "$ANDROID_KEY_ALIAS" = xiaqui
           umask 077
           export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/store-preview.keystore"
           trap 'rm -f "$ANDROID_KEYSTORE_FILE"' EXIT
@@ -47,7 +48,7 @@ jobs:
           bt="$ANDROID_HOME/build-tools/35.0.0"
           "$bt/apksigner" verify --verbose --print-certs "$apk" | tee "$RUNNER_TEMP/signature"
           cert=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/signature")
-          test -n "$cert"
+          test "$cert" = dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2
           if [[ -n "$EXPECTED_CERT" ]]; then test "${cert,,}" = "${EXPECTED_CERT,,}"; fi
           "$bt/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging"
           grep -E "^(package:|sdkVersion:|targetSdkVersion:)" "$RUNNER_TEMP/badging"
@@ -62,6 +63,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   device:
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -77,13 +79,29 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - uses: actions/download-artifact@v8
+        with:
+          name: ReleaseStore-preview.apk
+          path: delivery
+          skip-decompress: true
+      - name: Fetch verified 0.4.1 update baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download store-preview-025130e0bf4b --repo "$GITHUB_REPOSITORY" --pattern ReleaseStore-preview.apk --output old-release.apk
+          echo '363cad5e139f7f1cd1571643659b16987a3eb7518196896380447980a2152c15  old-release.apk' | sha256sum -c
       - name: Enable KVM
         run: sudo chmod 666 /dev/kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api }}
           arch: x86_64
-          script: gradle connectedDebugAndroidTest
+          script: bash .github/workflows/device-checks.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: seven-rows-api-${{ matrix.api }}
+          path: seven-rows.png
+          retention-days: 7
 
   preview:
     needs: [verify, device]

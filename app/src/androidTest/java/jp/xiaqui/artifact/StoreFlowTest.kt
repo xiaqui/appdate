@@ -50,6 +50,14 @@ class StoreFlowTest {
             assertEquals(cached.history,failed.history)
             assertEquals(cached.fetched,failed.fetched)
             assertEquals(saved, StoreService(context,Catalog(context),api).save(failed,release,asset))
+            val original = requireNotNull(saved)
+            original.outputStream().use { out -> out.write(byteArrayOf(1,2,3)) }
+            offline = false
+            val repaired = service.save(failed,release,asset)
+            assertNotEquals(original, repaired)
+            assertEquals(3L,original.length())
+            assertEquals(apk.length(),repaired.length())
+            service.delete(repaired)
             val edited = catalog.register(repo,repo,false)
             catalog.update(r) { it.copy(error="stale") }
             assertEquals(edited,catalog.get(repo))

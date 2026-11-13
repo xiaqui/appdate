@@ -17,12 +17,14 @@ open class MainActivity : Activity() {
     private var task: Future<*>? = null
     private var generation = 0
     private var source: Uri? = null
-    private val releases = GitHubReleases(auth)
+    private val auth by lazy { StoredAuth(this) }
+    private val releases by lazy { GitHubReleases(auth) }
     private var diagnostic = ""
     private var saved: File? = null
     private var details = ""
     private var reading: android.os.CancellationSignal? = null
-    private val storeDir get() = File(filesDir, "apks")
+    private val shelf by lazy { SavedShelf(this) }
+    private val storeDir get() = shelf.dir
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -44,7 +46,7 @@ open class MainActivity : Activity() {
             diagnostic = state?.getString("diagnostic").orEmpty()
             showSaved(previous)
         } else if (state != null) {
-            source = state.getParcelable<Uri>("source") ?: runCatching { Incoming.uri(intent) }.getOrNull()
+            source = runCatching { (state.getParcelable<Uri>("source") ?: Incoming.uri(intent))?.also { rejectCredentialUrl(it.toString()) } }.getOrNull()
             diagnostic = state?.getString("diagnostic").orEmpty()
             home("読み込みを再開できます。")
         } else if (this is SavedActivity) {
@@ -85,17 +87,11 @@ open class MainActivity : Activity() {
         page("Release APK Installer")
         text(message)
         if (source != null) button("再試行") { load() }
-        button("Releaseトークンを解除") { auth.clear(); home("認証を解除しました。") }
+        button("認証設定") { startActivity(Intent(this, StoreActivity::class.java).putExtra("settings", true)) }
         button("ZIP / APK を開く") {
             launch(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), PICK)
         }
-        button("保存したAPK") {
-            page("保存したAPK")
-            val files = storeDir.listFiles().orEmpty().filter { it.isFile }.sortedByDescending { it.lastModified() }
-            if (files.isEmpty()) text("保存したAPKはありません。")
-            files.forEach { file -> button(file.name) { showSaved(file) } }
-            button("戻る") { home() }
-        }
+        button("保存したAPK") { startActivity(Intent(this, StoreActivity::class.java).putExtra("shelf", true)) }
         text(diagnostic)
     }
 
@@ -135,11 +131,12 @@ open class MainActivity : Activity() {
         val uri = source ?: return
         saved = null
         val link = try { ReleaseLink.parse(uri.toString()) } catch (e: ImportFailure) {
+            source = null
             home(e.message.orEmpty())
             return
         }
         if (link != null) {
-            if (auth.tokenFor(link.repository) == null) credentials(link) else openRelease(link)
+            openRelease(link)
             return
         }
         val directory = session
@@ -166,32 +163,6 @@ open class MainActivity : Activity() {
                 }
             }
         }
-    }
-
-    private fun credentials(link: ReleaseLink) {
-        page("GitHub Release 認証")
-        text(link.repository)
-        text("対象リポジトリのContents読み取り権限を持つfine-grained PATを入力してください。認証はアプリのプロセス終了まで有効です。")
-        val field = EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            hint = "アクセストークン"
-            isSingleLine = true
-            isSaveEnabled = false
-            if (android.os.Build.VERSION.SDK_INT >= 26) importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-        }
-        panel.addView(field)
-        button("認証して開く") {
-            val token = field.text.toString().trim()
-            if (!Regex("[A-Za-z0-9_]{1,500}").matches(token)) field.error = "トークンを確認してください。"
-            else {
-                field.text.clear()
-                auth.use(link.repository, token)
-                openRelease(link)
-            }
-        }
-        button("公開Releaseとして開く") { openRelease(link) }
-        button("戻る") { home() }
-        text(diagnostic)
     }
 
     private fun openRelease(link: ReleaseLink) {
@@ -226,14 +197,16 @@ open class MainActivity : Activity() {
             val staged = File(directory, "release.apk")
             releases.download(link, apk, staged)
             checkReleaseApk(staged)
-            saveApk(staged, apk.name, directory)
+            saveApk(staged, apk.name, directory, link, apk)
         }) { (file, metadata) -> confirm(file, metadata) }
     }
 
-    private fun saveApk(candidate: File, name: String, directory: File): Pair<File, String> {
+    private fun saveApk(candidate: File, name: String, directory: File, link: ReleaseLink? = null, asset: ReleaseApk? = null): Pair<File, String> {
         val metadata = Installation.inspect(this, candidate)
         if (Thread.currentThread().isInterrupted) throw InterruptedException()
-        val dest = ApkStore(storeDir).save(candidate, name, Installation.describe(this, candidate).pkg)
+        val origin = if (link != null) "GitHub Release" else if (source?.scheme == "content") "端末ファイル" else "共有URL"
+        val dest = shelf.save(candidate, name, Installation.describe(this, candidate), origin,
+            link?.repository, link?.tag, asset)
         directory.deleteRecursively()
         return dest to metadata
     }
@@ -320,7 +293,6 @@ open class MainActivity : Activity() {
     }
 
     companion object {
-        private val auth = processAuth
         private var started = false
         private const val PICK = 1
         private const val SETTINGS = 2

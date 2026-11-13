@@ -6,11 +6,15 @@ GitHub Releasesを配布元として、登録した複数のpublic/privateリポ
 
 1. [検収用プレリリース](https://github.com/xiaqui/artifact/releases)で、目的の `store-preview-<SHA>` にある **ReleaseStore-preview.apk** をログイン済みブラウザから開きます。ストア版のIDは `jp.xiaqui.artifact.store.preview`。旧Installer版と並行導入でき、旧版の保存データは旧版から開けます。
 2. 起動して「リポジトリを登録」に `owner/repo` またはGitHub URLを貼り付けます。「最新の対象にプレリリースも含める」は登録ごとに変更できます。
-3. 非公開repoは「認証・再認証」で、そのrepoのContents読み取り権限を持つfine-grained PATを入力します。複数repoの認証はメモリ内で別々に保持し、プロセス終了後は再入力します。トークンの更新・解除は同じ画面から行います。公開repoは匿名で更新確認できます。
+3. メニューの「設定」でContents読み取り権限の共通PATを登録します。GitHub側で許可した複数repo・新規repoに適用されます。公開repoは匿名を優先し、アクセス拒否・制限時に共通PATを使用します。「個別PATの設定・再認証」はそのrepoだけの例外です。個別PAT解除は共通PATへ戻り、共通PAT解除は個別設定を保持します。どちらもAndroid Keystoreの鍵で暗号化し、バックアップ対象外に保存。鍵喪失時は該当設定を再入力してください。0.4.1のメモリにだけあったPATは初回登録が必要です。
 
 ## 更新と過去版
 
-一覧の「すべての更新を確認」、または個別repoの「更新を確認」を押します。下書きを除くAPK付きReleaseを公開日時順に表示します。プレリリースを除く設定では正式版だけが対象です。取得日時とエラーを表示し、通信失敗後も最後に取得した履歴を利用できます。
+トップ画面の「一括更新確認」、または個別repoの「更新を確認」を押します。下書きを除くAPK付きReleaseを公開日時順に表示します。プレリリースを除く設定では正式版だけが対象です。取得日時とエラーを表示し、通信失敗後も最後に取得した履歴を利用できます。
+
+トップはアプリ名・導入版 → 最新版・更新状態をまとめたタップ可能な行です。「前回」は最後の成功時点の版情報です。一括確認は成功・更新候補・同一版・失敗のrepo数を表示します。中断した確認は未完了として残ります。行をタップすると確認日時・最終成功日時、認証・再試行、Release履歴と保存操作が開きます。Asset詳細でID・提供されているSHA-256を確認できます。登録がゼロでもメニューから保存済みAPKを開けます。
+
+404の詳細にはRelease一覧／タグ／Asset本体／転送先と、該当リクエストの認証有無を表示します。公開repoに公開済みReleaseがないと一覧は空で成功する一方、存在しないタグ・Assetや閲覧権限のないprivate repoは404になり得ます。repo名、公開範囲、選択した対象、PATのrepo指定とContents権限を確認してください。トークン・完全URLは診断に記録しません。
 
 最新Releaseの未解析APKは、更新確認1回につき最大4件を一時取得してpackageName・アプリ名・versionCode・署名を調べます。通信量はAPKサイズに依存します。同じAssetの検査結果は次回も利用します。残りの候補と過去版は「APK情報を確認」で個別に解析できます。複数APKは明示的に選択してください。ABI・split構成の完全な判定および分割APKの一括導入は対象外です。
 
@@ -30,14 +34,14 @@ GitHub Releasesを配布元として、登録した複数のpublic/privateリポ
 
 GitHub Actionsで単体テスト、lint、API 23/29試験、APKの署名・minSdkを検査し、SHA単位の検収用プレリリースへ添付して再取得・バイト照合します。Actions ArtifactはCI内の受け渡し用です。同じタグのAssetを別バイナリで上書きしません。
 
-署名は他のAndroidアプリと共通のGradle環境変数 `ANDROID_KEYSTORE_FILE`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` を使用します。ActionsはRepository Secrets `KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD` を受け取り、キーストアを一時復元します。既存の `STORE_PREVIEW_*` Secretsも互換入力として受け付けます。署名Secretsが不足している場合は配布ビルドを失敗させ、runnerの一時debug鍵によるRelease公開を禁止します。任意のRepository Variable `STORE_PREVIEW_CERT_SHA256` を設定すると署名指紋を固定検証できます。
-
-APKの通常配送先はGitHub Releasesです。Release Storeで取得・更新し、GitHub Actions ArtifactやGoogle Driveを通常配送には使いません。既存インストール版と署名が異なる場合、同じapplicationIdでは上書き更新できません。
+配送は既存の固定鍵・alias `xiaqui` を必須とし、0.4.1の証明書SHA-256とも照合します。Secrets未設定や指紋不一致なら配送は失敗します。同一IDでも以前の一時debug鍵ビルドとは署名が異なります。
 
 ## 実機検収
 
-- 公開・非公開repoを登録し、個別・一括更新、編集・削除、通信を切った状態のキャッシュ、プロセス終了後の再認証を確認。
+- 公開・非公開repoを登録し、個別・一括更新、編集・削除、通信を切った状態のキャッシュ、プロセス終了後の認証維持と明示解除を確認。
 - 単一・複数APKのアプリ名、packageName、versionCode、導入済み版を確認。プレリリース表示を切り替え、過去版を選択。
 - 旧版・署名違いの表示を確認。Android 6/7と8以降でOS確認画面を開き、キャンセル後の保存、再起動後の再試行を確認。
 
 JDK 17、Gradle 8.9、Android SDK 35。ローカル検証は `gradle testDebugUnitTest lintDebug assembleDebug`、端末試験は `gradle connectedDebugAndroidTest`。エミュレータの自動試験と物理端末の検収は区別します。
+
+Release・更新確認・保存日時は表示時に端末のタイムゾーンで yyyy/MM/dd HH:mm に変換します。保存したAPKはメニューの一つの画面で扱い、端末ファイルとGitHub取得分の出所を表示します。記録のない旧APKは「旧保存分」と表示し、ファイル欠落時も履歴を保持します。APK詳細では実ファイルの署名を確認できます。別applicationIdの旧Installerはアプリ専用領域が異なるため、自動移行の対象外です。

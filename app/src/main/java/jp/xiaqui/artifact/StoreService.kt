@@ -2,7 +2,6 @@ package jp.xiaqui.artifact
 
 import android.content.Context
 import java.io.File
-import org.json.JSONObject
 
 internal fun storeError(e: Exception) = when {
     e is ImportFailure -> e.message ?: "APK取得失敗"
@@ -14,9 +13,8 @@ internal fun storeError(e: Exception) = when {
 }
 
 internal class StoreService(private val context: Context, val catalog: Catalog,
-    private val api: GitHubReleases = GitHubReleases(processAuth)) {
-    val dir = File(context.filesDir, "apks")
-    private val ledger = context.getSharedPreferences("saved-release-v1", Context.MODE_PRIVATE)
+    private val api: GitHubReleases = GitHubReleases(StoredAuth(context))) {
+    val shelf = SavedShelf(context)
     private val temp = File(context.cacheDir, "store-imports")
     init {
         synchronized(tempLock) {
@@ -50,12 +48,17 @@ internal class StoreService(private val context: Context, val catalog: Catalog,
                     errors += "${a.name}: ${storeError(e)}"
                 }
             }
-            val retained = history.flatMap { it.assets }.map { it.identity() }.toSet()
-            catalog.update(r) { it.copy(history = history, fetched = System.currentTimeMillis(),
-                error = errors.joinToString("\n"), inspected = (it.inspected + known).filterKeys { k -> k in retained }) }
+            if (Thread.currentThread().isInterrupted) throw InterruptedException()
+            val now = System.currentTimeMillis()
+            catalog.update(r) {
+                val snapshot = if (errors.isEmpty() || it.fetched == 0L) history else it.history
+                val retained = snapshot.flatMap { h -> h.assets }.map { a -> a.identity() }.toSet()
+                it.copy(history = snapshot, checked = now, fetched = if (errors.isEmpty()) now else it.fetched,
+                    error = errors.joinToString("\n"), inspected = (it.inspected + known).filterKeys(retained::contains))
+            }
         } catch (e: Exception) {
             if (e is InterruptedException) throw e
-            catalog.update(r) { it.copy(error = storeError(e)) }
+            catalog.update(r) { it.copy(error = storeError(e), checked = System.currentTimeMillis()) }
         }
     }
 
@@ -64,39 +67,17 @@ internal class StoreService(private val context: Context, val catalog: Catalog,
         info
     }
 
-    fun saved(r: Registration, a: ReleaseApk): File? = dir.listFiles().orEmpty().firstOrNull { file ->
-        val record = ledger.getString(file.name, null)?.let(::JSONObject)
-        record?.optString("repo") == r.repo && record.optString("asset") == a.identity()
-    }
+    fun saved(r: Registration, a: ReleaseApk) = shelf.candidate(r.repo,a)
     fun save(r: Registration, release: StoreRelease, a: ReleaseApk): File {
-        saved(r, a)?.let { return it }
+        shelf.verified(r.repo,a)?.let { return it }
         return fetch(r, a) { staged, info ->
             val expected = r.inspected[a.identity()]
             if (expected != null && (expected.pkg != info.pkg || expected.code != info.code || expected.signer != info.signer))
                 throw ImportFailure("解析済みAPKと取得したpackageName・versionCode・署名が異なります。Release Assetを確認してください。")
             catalog.update(r) { it.copy(inspected = it.inspected + (a.identity() to info)) }
-            synchronized(tempLock) {
-                saved(r, a) ?: run {
-                    val file = ApkStore(dir).save(staged, a.name, info.pkg)
-                    val record = JSONObject().put("repo", r.repo).put("tag", release.tag).put("asset", a.identity())
-                        .put("package", info.pkg).put("versionCode", info.code).put("versionName", info.version)
-                        .put("name", a.name).put("savedAt", System.currentTimeMillis())
-                    if (!ledger.edit().putString(file.name, record.toString()).commit()) {
-                        file.delete()
-                        throw ImportFailure("保存履歴を記録できません。")
-                    }
-                    file
-                }
-            }
+            shelf.save(staged, a.name, info, "GitHub Release", r.repo, release.tag, a)
         }
     }
-    fun provenance(file: File): String {
-        val j = ledger.getString(file.name, null)?.let(::JSONObject) ?: return file.name
-        return "${j.getString("name")} · ${j.getString("repo")} / ${j.getString("tag")}\n${j.getString("package")} ${j.getString("versionName")} (${j.getLong("versionCode")})"
-    }
-    fun delete(file: File) = synchronized(tempLock) {
-        if (!file.delete()) throw ImportFailure("ファイルを削除できません。")
-        ledger.edit().remove(file.name).apply()
-    }
+    fun delete(file: File) = shelf.delete(file)
     companion object { private val tempLock = Any(); private var cleaned = false }
 }
