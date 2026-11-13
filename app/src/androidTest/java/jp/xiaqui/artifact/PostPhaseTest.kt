@@ -79,7 +79,7 @@ class PostPhaseTest {
             inst.waitForIdleSync()
             inst.runOnMainSync {
                 val views = all(activity.window.decorView)
-                val rows = views.filter { it.isClickable && it.contentDescription?.contains("導入 ") == true }
+                val rows = views.filter { it.isClickable && it.contentDescription?.contains(" → ") == true }
                 assertEquals(7,rows.size)
                 for (row in rows) {
                     assertTrue(row.height >= 48 * context.resources.displayMetrics.density - 2)

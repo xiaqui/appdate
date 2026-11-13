@@ -131,7 +131,10 @@ class StoreActivity : Activity() {
             text = info.name; textSize = 16f; setTypeface(typeface, Typeface.BOLD)
             maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
         })
-        item.addView(TextView(this).apply { text = "${info.versions}　${info.status}"; textSize = 14f })
+        item.addView(TextView(this).apply {
+            text = if (info.status == "未導入") info.versions else "${info.versions}　${info.status}"
+            textSize = 14f
+        })
         item.contentDescription = "${info.name}、${info.versions}、${info.status}"
         panel.addView(item)
     }

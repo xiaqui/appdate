@@ -22,7 +22,8 @@ internal fun rowFor(r: Registration, absenceKnown: Boolean, installed: (String) 
     val http = Regex("HTTP [0-9]{3}").find(r.error)?.value
     val status = if (failed) listOfNotNull("確認失敗", http).joinToString(" ") else comparison
     val source = if (failed && r.fetched != 0L) "前回" else if (failed) "参考" else "最新"
-    return StoreRow(name, "導入 $left → $source $right", status, if (failed) "失敗" else comparison)
+    val installedText = if (left == "未導入") left else "導入 $left"
+    return StoreRow(name, "$installedText → $source $right", status, if (failed) "失敗" else comparison)
 }
 
 internal fun batchSummary(repos: List<String>, check: (String) -> StoreRow?): String {
