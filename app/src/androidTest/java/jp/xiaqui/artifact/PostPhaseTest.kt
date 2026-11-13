@@ -50,8 +50,13 @@ class PostPhaseTest {
         org.junit.Assume.assumeTrue(InstrumentationRegistry.getArguments().getString("restartCheck") == "true")
         val vault = StoredAuth(context)
         try {
+            assertEquals("offlineFixture", vault.tokenFor("fixture/restart"))
             val service = GitHubReleases(vault) { url -> object : HttpURLConnection(url) {
-                override fun getResponseCode() = if (getRequestProperty("Authorization") == "Bearer offlineFixture") 200 else 401
+                private var authorized = false
+                override fun setRequestProperty(key: String, value: String) {
+                    if (key == "Authorization") authorized = value == "Bearer offlineFixture"
+                }
+                override fun getResponseCode() = if (authorized) 200 else 401
                 override fun getInputStream() = "[]".byteInputStream()
                 override fun disconnect() {}
                 override fun connect() {}
