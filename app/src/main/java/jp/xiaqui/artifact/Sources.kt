@@ -13,7 +13,9 @@ internal object Incoming {
         Intent.ACTION_VIEW -> intent.data
         Intent.ACTION_SEND -> (intent.getParcelableExtra<android.os.Parcelable>(Intent.EXTRA_STREAM) as? Uri)
             ?: intent.clipData?.let { if (it.itemCount > 0) it.getItemAt(0).uri else null }
-            ?: intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.take(8192)?.let {
+            ?: (intent.getCharSequenceExtra(Intent.EXTRA_TEXT) ?: intent.clipData?.let {
+                if (it.itemCount == 1) it.getItemAt(0).text else null
+            })?.take(8192)?.let {
                 Regex("https?://[^\\s<>]+", RegexOption.IGNORE_CASE).find(it)?.value?.let(Uri::parse)
             }
         else -> null
@@ -34,7 +36,8 @@ internal object Incoming {
         }
         val type = intent.type?.takeIf { it in setOf("text/plain", "application/zip", "application/x-zip-compressed",
             "application/vnd.android.package-archive", "application/octet-stream") } ?: "other/none"
-        return "action=$action   type=$type\nscheme=$scheme   host=$host\nURI種別=" + when (scheme) {
+        val grant = if (intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0) "あり" else "なし"
+        return "action=$action   type=$type   読取grant=$grant\nscheme=$scheme   host=$host\nURI種別=" + when (scheme) {
             "content" -> "コンテンツ"
             "http", "https" -> "Webリンク"
             else -> "その他"

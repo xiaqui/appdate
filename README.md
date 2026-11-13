@@ -49,3 +49,7 @@ Release・更新確認・保存日時は表示時に端末のタイムゾーン�
 ## 正式Release
 
 実機検収済みのAPKを再ビルドせず昇格します。対象の版・元SHA・サイズ・APKと証明書の指紋は `.github/release/accepted.json` を参照してください。mainの **Promote accepted APK** でpublishを明示するか、配送設定更新のマージコミットに `[publish-stable]` を指定します。PRでは読み取り検証のみ行います。既存の公開Assetを差し替えず、ドラフトから再取得してビルド済みAPKとの一致を確認してから正式公開します。
+
+## 外部からの「開く」「共有」
+
+ブラウザでReleaseを共有するか、ダウンロード済みAPK/ZIPをファイル管理アプリから開きます。APK確認画面には実ファイルのSHA-256、現署名、端末の導入版との比較が表示されます。登録済みアプリの候補は、取得元repo、Release AssetのSHA-256、またはpackageNameと署名に基づいて表示します。関連付ける候補を選び、確認すると保存履歴と登録詳細の両方から参照できます。関連付けは任意です。未登録APKはそのまま単発でインストールできます。ブラウザ別の確認項目は [外部Intent連携](docs/ROADMAP_EXTERNAL_INTENTS_JA.md) にあります。

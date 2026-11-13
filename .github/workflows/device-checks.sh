@@ -31,11 +31,11 @@ instrument sevenRowsAndDetails
 adb exec-out run-as "$pkg" cat files/seven-rows.png > seven-rows.png
 test -s seven-rows.png
 
-# On the same virtual device, exercise the actual fixed-key update over the 0.4.1 Release.
+# On the same virtual device, exercise the actual fixed-key update over the 0.4.2 Release.
 adb uninstall "$pkg"
 adb install old-release.apk
 adb shell run-as "$pkg" mkdir -p files/apks
 adb shell run-as "$pkg" touch files/apks/upgrade-sentinel
 adb install -r delivery/ReleaseStore-preview.apk
 adb shell run-as "$pkg" ls files/apks/upgrade-sentinel
-adb shell dumpsys package "$pkg" | grep 'versionCode=6 '
+adb shell dumpsys package "$pkg" | grep 'versionCode=7 '

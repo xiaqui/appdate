@@ -22,6 +22,13 @@ open class MainActivity : Activity() {
     private var diagnostic = ""
     private var saved: File? = null
     private var details = ""
+    private data class Check(val sha: String, val info: ApkInfo, val status: String, val options: List<ExternalMatch>)
+    private var check: Check? = null
+    private var prompt: android.app.AlertDialog? = null
+    private var receipt = 0
+    private var nextRequest = 100
+    private val pending = mutableMapOf<Int, Pair<Int,Int>>()
+    private val catalog by lazy { Catalog(this) }
     private var reading: android.os.CancellationSignal? = null
     private val shelf by lazy { SavedShelf(this) }
     private val storeDir get() = shelf.dir
@@ -29,6 +36,11 @@ open class MainActivity : Activity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        receipt = state?.getInt("receipt") ?: 0
+        nextRequest = state?.getInt("nextRequest") ?: 100
+        state?.getIntArray("pending")?.asList()?.chunked(3)?.filter { it.size == 3 }?.forEach {
+            pending[it[0]] = it[1] to it[2]
+        }
         val root = File(cacheDir, "imports")
         if (!started) {
             root.deleteRecursively()
@@ -56,14 +68,29 @@ open class MainActivity : Activity() {
         } else receive(intent)
     }
 
+    override fun onNewIntent(incoming: Intent) {
+        super.onNewIntent(incoming)
+        prompt?.dismiss()
+        cancel()
+        setIntent(incoming)
+        receive(incoming)
+    }
+
     private fun receive(incoming: Intent) {
+        receipt++
+        saved = null
+        check = null
         source = try { Incoming.uri(incoming) } catch (_: RuntimeException) { null }
+        if (source?.scheme !in listOf("content","http","https")) source = null
         diagnostic = Incoming.diagnostics(incoming, source)
         if (source != null) load() else home(if (incoming.action == Intent.ACTION_MAIN) "" else "受信内容からファイルまたはURLを取得できませんでした。")
     }
 
     override fun onSaveInstanceState(state: Bundle) {
         super.onSaveInstanceState(state)
+        state.putInt("receipt", receipt)
+        state.putInt("nextRequest", nextRequest)
+        state.putIntArray("pending", pending.flatMap { listOf(it.key,it.value.first,it.value.second) }.toIntArray())
         state.putString("apk", saved?.name)
         state.putString("diagnostic", diagnostic)
         state.putParcelable("source", source?.takeIf { it.scheme == "content" })
@@ -170,7 +197,7 @@ open class MainActivity : Activity() {
         work("Release一覧を取得中…", { releases.releases(link) }) { items ->
             page(link.repository)
             if (items.isEmpty()) text("公開済みReleaseがありません。")
-            items.forEach { item -> button(item.tag) { selectAsset(link, item.id) } }
+            items.forEach { item -> button(item.tag) { selectAsset(link.copy(tag = item.tag), item.id) } }
             button("戻る") { home() }
         }
     }
@@ -198,17 +225,16 @@ open class MainActivity : Activity() {
             releases.download(link, apk, staged)
             checkReleaseApk(staged)
             saveApk(staged, apk.name, directory, link, apk)
-        }) { (file, metadata) -> confirm(file, metadata) }
+        }) { file -> showSaved(file) }
     }
 
-    private fun saveApk(candidate: File, name: String, directory: File, link: ReleaseLink? = null, asset: ReleaseApk? = null): Pair<File, String> {
-        val metadata = Installation.inspect(this, candidate)
+    private fun saveApk(candidate: File, name: String, directory: File, link: ReleaseLink? = null, asset: ReleaseApk? = null): File {
         if (Thread.currentThread().isInterrupted) throw InterruptedException()
         val origin = if (link != null) "GitHub Release" else if (source?.scheme == "content") "端末ファイル" else "共有URL"
         val dest = shelf.save(candidate, name, Installation.describe(this, candidate), origin,
             link?.repository, link?.tag, asset)
         directory.deleteRecursively()
-        return dest to metadata
+        return dest
     }
 
     private fun persist(entry: String?) {
@@ -220,11 +246,19 @@ open class MainActivity : Activity() {
                 if (!Archive(it).inspect().standalone) throw ImportFailure("選択したファイルはAPKではありません。")
             }
             saveApk(candidate, entry ?: "artifact.apk", directory)
-        }) { (file, metadata) -> confirm(file, metadata) }
+        }) { file -> showSaved(file) }
     }
 
     private fun showSaved(file: File) {
-        work("APKを確認中…", { Installation.inspect(this, file) }) { confirm(file, it) }
+        saved = file
+        work("APKを確認中…", {
+            val info = Installation.describe(this,file)
+            val sha = shelf.hash(file)
+            val origin = shelf.sourceRepo(file, sha)
+            val options = catalog.names().mapNotNull { repo -> catalog.get(repo)?.let { matchExternal(it,info,sha,origin) } }
+                .sortedByDescending { it.repo.equals(origin,true) }
+            Installation.inspect(this,file) to Check(sha,info,Installation.status(this,info),options)
+        }) { (metadata, assessment) -> check = assessment; confirm(file, metadata) }
     }
 
     private fun confirm(file: File, metadata: String, message: String = "") {
@@ -234,6 +268,29 @@ open class MainActivity : Activity() {
         text(metadata)
         text(file.name)
         text(message)
+        check?.let { assessment ->
+            text("APK SHA-256\n" + assessment.sha)
+            text(shelf.describe(file))
+            if (assessment.options.isEmpty()) text("対応する登録を確認できません。単発で開けます。")
+            for (option in assessment.options) {
+                text(option.repo + " · " + option.evidence)
+                if (option.eligible && shelf.canAssociate(file,assessment.sha)) button(option.repo + " に関連付ける") {
+                    val expectedReceipt = receipt
+                    prompt = android.app.AlertDialog.Builder(this).setTitle("保存履歴を関連付けますか？")
+                        .setMessage(option.repo + "\n" + option.evidence + "\n" + assessment.status)
+                        .setNegativeButton("戻る",null).setPositiveButton("関連付ける") { _,_ ->
+                            if (expectedReceipt != receipt || saved != file) return@setPositiveButton
+                            work("保存履歴を確認中…", {
+                                val current = catalog.get(option.repo)
+                                if (current == null || current.revision != option.revision ||
+                                    matchExternal(current,assessment.info,assessment.sha,shelf.sourceRepo(file,assessment.sha)) != option)
+                                    throw ImportFailure("登録または照合結果が変わりました。APKを開き直してください。")
+                                shelf.associate(file, assessment.sha, option, Installation.status(this,assessment.info))
+                            }) { confirm(file, metadata, "関連付けを保存しました。") }
+                        }.show()
+                }
+            }
+        }
         button("標準インストーラで開く") {
             val settings = Installation.permissionSettings(this)
             when {
@@ -250,7 +307,10 @@ open class MainActivity : Activity() {
     }
 
     private fun launch(intent: Intent, code: Int) {
-        try { startActivityForResult(intent, code) }
+        val request = nextRequest++
+        if (nextRequest >= 65000) nextRequest = 100
+        pending[request] = code to receipt
+        try { startActivityForResult(intent, request) }
         catch (_: RuntimeException) {
             val message = "対応するシステム画面を開けません。端末の設定を確認してください。"
             saved?.let { confirm(it, details, message) } ?: home(message)
@@ -260,11 +320,13 @@ open class MainActivity : Activity() {
     @Deprecated("Platform activity result API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == PICK && resultCode == RESULT_OK && data?.data != null)
-            receive(Intent(Intent.ACTION_VIEW).setDataAndType(data.data, data.type))
-        else if (requestCode == SETTINGS || requestCode == INSTALL)
+        val (kind, owner) = pending.remove(requestCode) ?: return
+        if (owner != receipt) return
+        if (kind == PICK && resultCode == RESULT_OK && data?.data != null)
+            receive(Intent(Intent.ACTION_VIEW).setDataAndType(data.data, data.type).addFlags(data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        else if (kind == SETTINGS || kind == INSTALL)
             saved?.let {
-                val result = if (requestCode == SETTINGS) "提供元の許可設定から戻りました。" else if (data?.hasExtra(android.content.pm.PackageInstaller.EXTRA_STATUS) == true)
+                val result = if (kind == SETTINGS) "提供元の許可設定から戻りました。" else if (data?.hasExtra(android.content.pm.PackageInstaller.EXTRA_STATUS) == true)
                     installStatus(data.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, 1))
                 else when (data?.getIntExtra("android.intent.extra.INSTALL_RESULT", 0)) {
                     -4 -> "インストール先の容量が不足しています。"

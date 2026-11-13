@@ -24,7 +24,7 @@ internal class SavedShelf(context: Context) {
 
     fun candidate(repo: String, asset: ReleaseApk) = candidates(repo, asset).firstOrNull()
 
-    private fun hash(file: File): String {
+    internal fun hash(file: File): String {
         val digest = java.security.MessageDigest.getInstance("SHA-256")
         java.security.DigestInputStream(file.inputStream(), digest).use { transfer(it, null, MAX_INPUT) }
         return digest.digest().joinToString("") { "%02x".format(it) }
@@ -50,6 +50,18 @@ internal class SavedShelf(context: Context) {
         file
     }
 
+    fun sourceRepo(file: File, sha: String) = record(file)?.takeIf { it.optString("sha256") == sha }
+        ?.optString("repo")?.takeIf { it.isNotEmpty() }
+    fun canAssociate(file: File, sha: String) = record(file)?.optString("sha256") == sha
+    fun associate(file: File, sha: String, candidate: ExternalMatch, status: String) = synchronized(lock) {
+        val row = record(file) ?: throw ImportFailure("保存履歴を読み直してください。")
+        if (!candidate.eligible || !file.isFile || hash(file) != sha || row.optString("sha256") != sha)
+            throw ImportFailure("APKの照合に失敗しました。保存したAPKを確認してください。")
+        row.put("linkedRepo",candidate.repo).put("linkEvidence",candidate.evidence).put("linkStatus",status)
+        if (!ledger.edit().putString(file.name,row.toString()).commit()) throw ImportFailure("関連付けを保存できません。")
+    }
+    fun related(repo: String) = entries().filter { record(it)?.optString("linkedRepo") == repo }
+
     fun describe(file: File): String {
         val r = record(file)
         val origin = r?.optString("source")?.takeIf { it.isNotBlank() }
@@ -60,6 +72,8 @@ internal class SavedShelf(context: Context) {
             if (r?.has("repo") == true) append(" · " + r.optString("repo") + " " + r.optString("tag"))
             append("\n保存 " + StoreTime.local(r?.optLong("savedAt",file.lastModified()) ?: file.lastModified()))
             if (r?.has("package") == true) append("\n" + r.optString("package") + " " + r.optString("versionName") + " (" + r.optLong("versionCode") + ")")
+            if (r?.has("linkedRepo") == true) append("\n関連先 " + r.optString("linkedRepo") +
+                " · " + r.optString("linkEvidence") + " · 確認時 " + r.optString("linkStatus"))
             if (!file.isFile) append("\n実体が見つかりません。履歴を保持しています。")
         }
     }

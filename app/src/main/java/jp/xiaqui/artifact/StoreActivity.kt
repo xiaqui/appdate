@@ -187,6 +187,14 @@ class StoreActivity : Activity() {
             button("更新を確認 / 再試行") { refresh(listOf(r)) }
             button("個別PATの設定・再認証") { auth(r) }
             button("登録を編集") { edit(r) }
+            val linked = service.shelf.related(r.repo)
+            if (linked.isNotEmpty()) {
+                label("関連付けた保存APK", true)
+                linked.forEach { file ->
+                    label(service.shelf.describe(file))
+                    if (file.isFile) button("APK詳細・現在の更新状態") { open(file) }
+                }
+            }
             label("Release履歴", true)
             itemsPage(r.visible) { h ->
                 button("${h.tag} · ${if (h.preview) "プレリリース" else "正式版"}\n${StoreTime.published(h.published)} · APK ${h.assets.size} 件") {
