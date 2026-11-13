@@ -13,13 +13,21 @@ android {
         versionName = "0.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-    val keyFile = System.getenv("STORE_SIGNING_FILE")
-    if (!keyFile.isNullOrBlank()) {
-        signingConfigs.getByName("debug") {
-            storeFile = file(keyFile)
-            storePassword = System.getenv("STORE_SIGNING_PASSWORD")
-            keyAlias = System.getenv("STORE_SIGNING_ALIAS")
-            keyPassword = System.getenv("STORE_KEY_PASSWORD")
+    signingConfigs {
+        create("delivery") {
+            val path = System.getenv("ANDROID_KEYSTORE_FILE")
+            if (!path.isNullOrBlank()) {
+                storeFile = file(path)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            if (!System.getenv("ANDROID_KEYSTORE_FILE").isNullOrBlank())
+                signingConfig = signingConfigs.getByName("delivery")
         }
     }
     compileOptions {
