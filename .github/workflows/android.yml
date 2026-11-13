@@ -1,0 +1,138 @@
+name: Personal Release Store
+on:
+  push:
+    branches: ['work/phase1-installer']
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  # Preview delivery requires a deliberate [publish-preview] commit or manual dispatch.
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Test, lint and build preview
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 || secrets.STORE_PREVIEW_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || secrets.STORE_PREVIEW_STORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.STORE_PREVIEW_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.KEY_ALIAS || secrets.STORE_PREVIEW_KEY_ALIAS }}
+          EXPECTED_CERT: ${{ vars.STORE_PREVIEW_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          : "${KEYSTORE_B64:?missing signing keystore secret}"
+          : "${ANDROID_KEYSTORE_PASSWORD:?missing keystore password}"
+          : "${ANDROID_KEY_ALIAS:?missing key alias}"
+          : "${ANDROID_KEY_PASSWORD:?missing key password}"
+          test "$ANDROID_KEY_ALIAS" = xiaqui
+          umask 077
+          export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/store-preview.keystore"
+          trap 'rm -f "$ANDROID_KEYSTORE_FILE"' EXIT
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$ANDROID_KEYSTORE_FILE"
+          unset KEYSTORE_B64
+          gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
+      - name: Verify APK and record build identity
+        env:
+          EXPECTED_CERT: ${{ vars.STORE_PREVIEW_CERT_SHA256 }}
+        shell: bash
+        run: |
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          bt="$ANDROID_HOME/build-tools/35.0.0"
+          "$bt/apksigner" verify --verbose --print-certs "$apk" | tee "$RUNNER_TEMP/signature"
+          cert=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/signature")
+          test "$cert" = dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2
+          if [[ -n "$EXPECTED_CERT" ]]; then test "${cert,,}" = "${EXPECTED_CERT,,}"; fi
+          "$bt/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging"
+          grep -E "^(package:|sdkVersion:|targetSdkVersion:)" "$RUNNER_TEMP/badging"
+          grep -Fx "sdkVersion:'23'" "$RUNNER_TEMP/badging"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          cp "$apk" ReleaseStore-preview.apk
+          { echo "$GITHUB_SHA"; sha256sum ReleaseStore-preview.apk; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ReleaseStore-preview.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
+  device:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [23, 29]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: actions/download-artifact@v8
+        with:
+          name: ReleaseStore-preview.apk
+          path: delivery
+          skip-decompress: true
+      - name: Fetch verified 0.4.1 update baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download store-preview-025130e0bf4b --repo "$GITHUB_REPOSITORY" --pattern ReleaseStore-preview.apk --output old-release.apk
+          echo '363cad5e139f7f1cd1571643659b16987a3eb7518196896380447980a2152c15  old-release.apk' | sha256sum -c
+      - name: Enable KVM
+        run: sudo chmod 666 /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          script: bash .github/workflows/device-checks.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: seven-rows-api-${{ matrix.api }}
+          path: seven-rows.png
+          retention-days: 7
+
+  preview:
+    needs: [verify, device]
+    if: github.ref == 'refs/heads/work/phase1-installer' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ReleaseStore-preview.apk
+          path: delivery
+          skip-decompress: true
+      - name: Verify private Release Asset and publish preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=delivery/ReleaseStore-preview.apk
+          tag="store-preview-${GITHUB_SHA:0:12}"
+          sha=$(sha256sum "$apk" | cut -d' ' -f1)
+          if ! gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" "$apk" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Release Store · ${GITHUB_SHA:0:12}" --notes "PR #1 fixed-key signed preview. Source: $GITHUB_SHA. SHA-256: $sha"
+          fi
+          mkdir -p verify
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" --pattern 'ReleaseStore-preview.apk' --dir verify
+          cmp "$apk" verify/ReleaseStore-preview.apk
+          gh release edit "$tag" -R "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+          echo "APK SHA-256: $sha" >> "$GITHUB_STEP_SUMMARY"
