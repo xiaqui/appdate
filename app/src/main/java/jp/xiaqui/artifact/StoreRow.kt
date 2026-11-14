@@ -15,7 +15,7 @@ internal fun rowFor(r: Registration, absenceKnown: Boolean, installed: (String) 
     val comparison = when {
         selected != null -> compareInstalled(selected, local, absenceKnown)
         assets.size > 1 -> "複数APK"
-        assets.isEmpty() && r.fetched != 0L -> "対象なし"
+        assets.isEmpty() && r.fetched != 0L -> "配布なし"
         else -> "未確認"
     }
     val failed = r.error.isNotEmpty()
@@ -42,3 +42,4 @@ internal fun batchSummary(repos: List<String>, check: (String) -> StoreRow?): St
     if (Thread.currentThread().isInterrupted) throw InterruptedException()
     return "成功 $ok（更新 $updates・同一 $same）／失敗 $failed"
 }
+

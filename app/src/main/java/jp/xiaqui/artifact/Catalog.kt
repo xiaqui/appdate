@@ -13,7 +13,8 @@ internal data class ApkInfo(val pkg: String, val label: String, val version: Str
 }
 internal data class Registration(val repo: String, val previews: Boolean, val revision: String,
     val fetched: Long = 0, val error: String = "", val history: List<StoreRelease> = emptyList(),
-    val inspected: Map<String, ApkInfo> = emptyMap(), val checked: Long = 0) {
+    val inspected: Map<String, ApkInfo> = emptyMap(), val checked: Long = 0,
+    val githubId: Long = 0, val remoteName: String = "") {
     val link get() = ReleaseLink(repo, null, null, true)
     val visible get() = history.filter { previews || !it.preview }
 }
@@ -64,7 +65,7 @@ internal object CatalogCodec {
         val inspected = JSONObject()
         r.inspected.forEach { (key, info) -> inspected.put(key, info.json()) }
         return JSONObject().put("repo", r.repo).put("previews", r.previews).put("revision", r.revision)
-            .put("checked", r.checked).put("fetched", r.fetched).put("error", r.error).put("history", histories).put("inspected", inspected).toString()
+            .put("githubId", r.githubId).put("remoteName", r.remoteName).put("checked", r.checked).put("fetched", r.fetched).put("error", r.error).put("history", histories).put("inspected", inspected).toString()
     }
     fun decode(raw: String): Registration {
         val j = JSONObject(raw)
@@ -74,7 +75,7 @@ internal object CatalogCodec {
                 StoreRelease(h.getLong("id"), h.getString("tag"), h.getString("published"), h.getBoolean("preview"),
                     h.getJSONArray("assets").mapRows { a -> ReleaseApk(a.getLong("id"), a.getString("name"),
                         a.getLong("size"), a.optString("digest").ifEmpty { null }, a.optString("updated")) }, h.optString("commit"))
-            }, inspected.keys().asSequence().associateWith { metadata(inspected.getJSONObject(it)) }, j.optLong("checked", 0))
+            }, inspected.keys().asSequence().associateWith { metadata(inspected.getJSONObject(it)) }, j.optLong("checked", 0), j.optLong("githubId", 0), j.optString("remoteName"))
     }
 }
 
@@ -93,6 +94,22 @@ internal class Catalog(context: Context) {
         if (!change.putString(repo, CatalogCodec.encode(result)).commit()) throw ImportFailure("登録を保存できません。")
         result
     }
+    fun addRemote(remote: RemoteRepo): ImportChange = synchronized(lock) {
+        val name = repoName(remote.name)
+        val byId = names().mapNotNull(::get).firstOrNull { it.githubId == remote.id }
+        val existing = byId ?: get(name)
+        if (existing != null && existing.githubId != 0L && existing.githubId != remote.id)
+            throw ImportFailure("同じrepo名の識別IDが変わっています。既存設定を保持しました。登録を確認してください。")
+        val result = existing?.copy(githubId = remote.id, remoteName = name)
+            ?: Registration(name, true, UUID.randomUUID().toString(), githubId = remote.id, remoteName = name)
+        if (!prefs.edit().putString(result.repo, CatalogCodec.encode(result)).commit())
+            throw ImportFailure("登録を保存できません。")
+        when {
+            existing == null -> ImportChange.ADDED
+            existing.repo != name -> ImportChange.RENAMED
+            else -> ImportChange.EXISTING
+        }
+    }
     fun update(r: Registration, change: (Registration) -> Registration) = synchronized(lock) {
         val current = get(r.repo)
         if (current?.revision == r.revision &&
@@ -102,3 +119,4 @@ internal class Catalog(context: Context) {
     fun remove(repo: String) = synchronized(lock) { prefs.edit().remove(repo).commit() }
     companion object { private val lock = Any() }
 }
+

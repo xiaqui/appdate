@@ -1,7 +1,7 @@
 name: Personal Release Store
 on:
   push:
-    branches: ['work/phase1-installer']
+    branches: ['work/phase1-installer', 'work/pat-repo-auto-import']
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -56,6 +56,7 @@ jobs:
           if [[ -n "$EXPECTED_CERT" ]]; then test "${cert,,}" = "${EXPECTED_CERT,,}"; fi
           "$bt/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging"
           grep -E "^(package:|sdkVersion:|targetSdkVersion:)" "$RUNNER_TEMP/badging"
+          grep -F "versionCode='8' versionName='0.4.3'" "$RUNNER_TEMP/badging"
           grep -Fx "sdkVersion:'23'" "$RUNNER_TEMP/badging"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           cp "$apk" ReleaseStore-preview.apk
@@ -88,12 +89,12 @@ jobs:
           name: ReleaseStore-preview.apk
           path: delivery
           skip-decompress: true
-      - name: Fetch verified 0.4.1 update baseline
+      - name: Fetch verified 0.4.2 update baseline
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download store-preview-025130e0bf4b --repo "$GITHUB_REPOSITORY" --pattern ReleaseStore-preview.apk --output old-release.apk
-          echo '363cad5e139f7f1cd1571643659b16987a3eb7518196896380447980a2152c15  old-release.apk' | sha256sum -c
+          gh release download v0.4.2 --repo "$GITHUB_REPOSITORY" --pattern ReleaseStore-0.4.2.apk --output old-release.apk
+          echo 'e98f9cfe9a4f98b9de51cb9329f84fc4e471483dc25af0da9be5d7be0cdc2e32  old-release.apk' | sha256sum -c
       - name: Enable KVM
         run: sudo chmod 666 /dev/kvm
       - uses: reactivecircus/android-emulator-runner@v2
@@ -109,7 +110,7 @@ jobs:
 
   preview:
     needs: [verify, device]
-    if: github.ref == 'refs/heads/work/phase1-installer' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
+    if: (github.ref == 'refs/heads/work/phase1-installer' || github.ref == 'refs/heads/work/pat-repo-auto-import') && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -125,14 +126,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          apk=delivery/ReleaseStore-preview.apk
+          apk=delivery/ReleaseStore-v0.4.3-preview.apk
+          mv delivery/ReleaseStore-preview.apk "$apk"
           tag="store-preview-${GITHUB_SHA:0:12}"
           sha=$(sha256sum "$apk" | cut -d' ' -f1)
           if ! gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$tag" "$apk" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Release Store · ${GITHUB_SHA:0:12}" --notes "PR #1 fixed-key signed preview. Source: $GITHUB_SHA. SHA-256: $sha"
+            gh release create "$tag" "$apk" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Release Store 0.4.3 · PAT repo auto-import" --notes "PAT repo auto-import 0.4.3 (8), fixed-key signed preview. Source: $GITHUB_SHA. SHA-256: $sha"
           fi
           mkdir -p verify
-          gh release download "$tag" -R "$GITHUB_REPOSITORY" --pattern 'ReleaseStore-preview.apk' --dir verify
-          cmp "$apk" verify/ReleaseStore-preview.apk
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" --pattern 'ReleaseStore-v0.4.3-preview.apk' --dir verify
+          cmp "$apk" verify/ReleaseStore-v0.4.3-preview.apk
           gh release edit "$tag" -R "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
           echo "APK SHA-256: $sha" >> "$GITHUB_STEP_SUMMARY"
+
