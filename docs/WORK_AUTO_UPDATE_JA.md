@@ -33,7 +33,9 @@ PR #4のPAT自動登録とPR #5の画面保護変更、外部Intent branchは混
 - 証明書SHA-256: dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2
 - ビルド元: 798b967c6f2927d75a92c5abf7a79e8df2b4817f
 
-配送結果は公開後に追記。PRは実機検収待ちで未マージとする。
+2026-11-14 UTC: 配送は未完了。[配送run 43637669070](https://github.com/xiaqui/artifact/actions/runs/43637669070) は初回・失敗jobのみの再試行とも、runner_id=0、steps空のまま約2秒で失敗。APK検証・アップロードは未実行。同時の配送設定検証run 43637673251もrunner開始前に失敗。jobログはBlobNotFoundで取得できず、原因は未確定（利用枠不足とは断定しない）。接続ではcheck annotationsが取得対象外、代替ブラウザは未認証のためprivate repoの原因表示を確認できなかった。
+
+復旧時は配送runのfailed jobsのみ再実行すれば、検証済みAPKを再ビルドせず配送できる。予定tagはstore-preview-798b967c6f29。公開後にassetのサイズ/hash/source/certificateを再照合するまで配送完了扱いにしない。配送設定検証runも復旧後に再実行する。PRは未マージ、Release配送と実機検収待ち。
 
 ## 実機検収
 
