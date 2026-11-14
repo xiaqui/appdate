@@ -4,7 +4,7 @@ GitHub Releasesを配布元として、登録した複数のpublic/privateリポ
 
 ## 初回設定
 
-1. [検収用プレリリース](https://github.com/xiaqui/artifact/releases)で、目的の `store-preview-<SHA>` にある **ReleaseStore-preview.apk** をログイン済みブラウザから開きます。ストア版のIDは `jp.xiaqui.artifact.store.preview`。旧Installer版と並行導入でき、旧版の保存データは旧版から開けます。
+1. [検収用プレリリース](https://github.com/xiaqui/artifact/releases)で、目的の `store-preview-<SHA>` にある 版入りAPK（今回の検収版は **ReleaseStore-v0.4.3-preview.apk**）をログイン済みブラウザから開きます。旧Releaseのファイル名はそのまま保持しています。ストア版のIDは `jp.xiaqui.artifact.store.preview`。旧Installer版と並行導入でき、旧版の保存データは旧版から開けます。
 2. 起動して「リポジトリを登録」に `owner/repo` またはGitHub URLを貼り付けます。「最新の対象にプレリリースも含める」は登録ごとに変更できます。
 3. メニューの「設定」でContents読み取り権限の共通PATを登録します。GitHub側で許可した複数repo・新規repoに適用されます。公開repoは匿名を優先し、アクセス拒否・制限時に共通PATを使用します。「個別PATの設定・再認証」はそのrepoだけの例外です。個別PAT解除は共通PATへ戻り、共通PAT解除は個別設定を保持します。どちらもAndroid Keystoreの鍵で暗号化し、バックアップ対象外に保存。鍵喪失時は該当設定を再入力してください。0.4.1のメモリにだけあったPATは初回登録が必要です。
 

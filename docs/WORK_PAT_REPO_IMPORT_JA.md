@@ -21,3 +21,14 @@ GitHub Actionsで単体テスト、lint、署名付きビルド、API 23/29端�
 実PATを利用したGitHub側の列挙範囲、組織承認、実端末の保存→自動追加/変更→再取得/通信中断/端末再起動を確認する。API 23/29エミュレータの成功は実機合格ではない。PRはマージしない。
 
 GET /user/reposが返すrepoはPATで閲覧可能な全repoと同一とは限らない。Metadata読み取りで列挙し、private ReleaseにはContents読み取りが必要。未列挙repoは従来通り手動登録可能。通常push・docs更新ではReleaseを作らず、検収用APKは明示配送で一度公開する。
+
+## 最終確認結果
+
+- [CI 43551921533](https://github.com/xiaqui/artifact/actions/runs/43551921533) は全job成功。単体テスト34件を含むtestDebugUnitTest、lintDebug、署名付きassembleDebug、API 23/29 connectedテストと強制終了/再起動後の認証・登録保持、0.4.2からの上書きと保存APK領域保持を確認。
+- 独立レビューのP1 1件・P2 2件は修正差分まで再確認済み。未解決P0/P1/P2なし。
+- [検収Release](https://github.com/xiaqui/artifact/releases/tag/store-preview-2c85f2f01f2f) 公開済み（prerelease）。[APK直接取得](https://github.com/xiaqui/artifact/releases/download/store-preview-2c85f2f01f2f/ReleaseStore-v0.4.3-preview.apk)。Releaseから再取得してビルド済みファイルとバイト一致を確認。既存Release/Assetは変更していない。
+- ファイル `ReleaseStore-v0.4.3-preview.apk`、2,114,387 bytes、applicationId `jp.xiaqui.artifact.store.preview`、versionName `0.4.3` / versionCode `8`、minSdk 23。
+- ビルド元 `2c85f2f01f2fb81a2bc42de85936cfb81d44983d`。以後の文書結果記録commitはAPKへ含めていない。
+- APK SHA-256 `eb6c16c59487f30b37568b5bb68295c4b24799832a42162389f3400a73819842`。
+- 署名v1/v2、固定alias `xiaqui`、証明書SHA-256 `dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2`（従来と一致）。API 23/29で正式0.4.2から上書き成功。
+- 実PAT・実端末の検収は未実施。PR #4は未マージで停止。mainと外部Intent作業branchは変更していない。
