@@ -1,7 +1,7 @@
 # TASK — 自動更新確認・無人APK取得・通知インストール
 
 作成: 2026-11-14
-状態: 次期実装仕様。PAT自動登録PR #4とは別作業。
+状態: PR #6で実装・CI・独立レビュー完了、実機検収待ち・未マージ。配送記録は WORK_AUTO_UPDATE_JA.md。PAT自動登録PR #4とは別作業。
 対象: Release Store / Android 6〜10（API 23〜29）
 
 ## 目的
@@ -35,3 +35,4 @@ GitHub Actionsが公開した各repoのGitHub ReleasesをRelease Storeが検知�
 2. 起動時自動確認、Wi-Fi限定の定期取得、一括手動取得、通知、保存上限、表示名変更・repo改名・packageName変更、対応OS表示と非対応除外、端末の実インストール状態と保存履歴の分離・照合、再試行・中断・再起動・重複防止を単体/統合テストする。Android 6/API23と10/API29のAPI境界を重点確認する。
 3. test、lint、CI、独立レビューを実施しP0/P1を修正する。実機検収はZ3TC(Android6)、Z4T(Android7)、Android8/9/10の代表端末で、起動・画面OFF・通信切替・通知タップ・インストールキャンセル・保存上限を確認する。実機未確認は合格扱いしない。
 4. commit/pushして独立PRを作成し、**社長の実機検収前にmergeしない**。PR URL、CI、APKの配送先、未確認項目を報告する。配送が必要ならGitHub Releasesの検収用プレビューを利用し、既存署名・版入り命名・Release乱造防止を守る。
+

@@ -11,6 +11,7 @@ permissions:
   contents: read
 jobs:
   verify:
+    if: "!(github.ref == 'refs/heads/work/auto-update-notify' && contains(github.event.head_commit.message, '[deliver-tested]'))"
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -139,3 +140,63 @@ jobs:
           gh release edit "$tag" -R "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
           echo "APK SHA-256: $sha" >> "$GITHUB_STEP_SUMMARY"
 
+
+  deliver-tested:
+    if: github.ref == 'refs/heads/work/auto-update-notify' && contains(github.event.head_commit.message, '[deliver-tested]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require successful tested source and no application changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source=798b967c6f2927d75a92c5abf7a79e8df2b4817f
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/43601806132" > "$RUNNER_TEMP/tested-run.json"
+          test "$(jq -r .conclusion "$RUNNER_TEMP/tested-run.json")" = success
+          test "$(jq -r .head_sha "$RUNNER_TEMP/tested-run.json")" = "$source"
+          git merge-base --is-ancestor "$source" "$GITHUB_SHA"
+          git diff --exit-code "$source" "$GITHUB_SHA" -- app gradle.properties settings.gradle.kts .github/workflows/device-checks.sh
+      - uses: actions/download-artifact@v8
+        with:
+          name: ReleaseStore-preview.apk
+          path: delivery
+          skip-decompress: true
+          run-id: 43601806132
+          github-token: ${{ github.token }}
+      - name: Verify and deliver tested APK without rebuilding
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source=798b967c6f2927d75a92c5abf7a79e8df2b4817f
+          tag=store-preview-798b967c6f29
+          apk=delivery/ReleaseStore-v0.6.0-preview.apk
+          mv delivery/ReleaseStore-preview.apk "$apk"
+          test "$(stat -c %s "$apk")" = 2136638
+          echo "37d7844cbb38dc7b239411daadc445eceda0ed0ca47549736ebe4de0f2e84c24  $apk" | sha256sum -c
+          bt="$ANDROID_HOME/build-tools/35.0.0"
+          "$bt/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/signature"
+          grep -Fx 'Signer #1 certificate SHA-256 digest: dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2' "$RUNNER_TEMP/signature"
+          grep -Fx 'Verified using v1 scheme (JAR signing): true' "$RUNNER_TEMP/signature"
+          grep -Fx 'Verified using v2 scheme (APK Signature Scheme v2): true' "$RUNNER_TEMP/signature"
+          "$bt/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging"
+          grep -F "package: name='jp.xiaqui.artifact.store.preview' versionCode='9' versionName='0.6.0'" "$RUNNER_TEMP/badging"
+          grep -Fx "sdkVersion:'23'" "$RUNNER_TEMP/badging"
+          export PREVIEW_SOURCE="$source" PREVIEW_TAG="$tag"
+          state=$(python .github/release/check-preview.py)
+          if [[ "$state" = absent ]]; then
+            gh release create "$tag" "$apk" -R "$GITHUB_REPOSITORY" --target "$source" --draft --prerelease --title 'Release Store 0.6.0 · automatic updates' --notes "PR #6 tested preview. Source: $source. CI: 43601806132. APK SHA-256: 37d7844cbb38dc7b239411daadc445eceda0ed0ca47549736ebe4de0f2e84c24. Version 0.6.0 (9). Fixed xiaqui certificate, v1/v2. Device acceptance pending."
+          fi
+          mkdir verify
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" --pattern 'ReleaseStore-v0.6.0-preview.apk' --dir verify
+          cmp "$apk" verify/ReleaseStore-v0.6.0-preview.apk
+          python .github/release/check-preview.py
+          gh release edit "$tag" -R "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+          python .github/release/check-preview.py --published
+          gh release view "$tag" -R "$GITHUB_REPOSITORY" --json url,isDraft,isPrerelease,assets

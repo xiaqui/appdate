@@ -11,6 +11,11 @@
 3. 詳細仕様に沿って実装し、test・lint・CI・独立レビュー・P0/P1修正を実施する。Android 6〜10の互換性と保存データ保護を維持する。
 4. commit/pushして独立PRを作り、**実機検収前にmergeしない**。必要なプレビューAPKのみGitHub Releasesへ配送し、検収項目と未完了を報告する。
 
+## 進捗
+
+PR #6 / `work/auto-update-notify` で実装・テスト・lint・API 23/29・独立レビューを完了。実機検収待ち・未マージ。配送と検証の詳細は `docs/WORK_AUTO_UPDATE_JA.md`。
+
 ## 前タスクと履歴
 - 共通PATによるrepo自動登録: **PR #4**。仕様: `docs/TASK_PAT_REPO_AUTO_IMPORT_JA.md`。PRの検収・merge判断は別途継続し、このTASK切替で完了扱いにしない。
 - Phase 1、PR #1/#2/#3、正式v0.4.2: 完了済み。以前のTASK本文は `docs/TASK_PHASE1_ARCHIVE_2026-11-14_JA.md` に保存済み。
+
