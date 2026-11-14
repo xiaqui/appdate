@@ -88,6 +88,7 @@ class PostPhaseTest {
     }
 
     @Test fun sevenRowsAndDetails() {
+        AutoSettings(context).paused=true
         val cat = Catalog(context)
         val regs = (1..7).map { n ->
             val repo = "ui/app$n"
@@ -134,3 +135,4 @@ class PostPhaseTest {
     private fun all(view: View): List<View> = listOf(view) + if (view is ViewGroup)
         (0 until view.childCount).flatMap { all(view.getChildAt(it)) } else emptyList()
 }
+

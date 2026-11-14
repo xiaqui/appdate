@@ -21,6 +21,10 @@ class StoreActivity : Activity() {
     private var releaseId: Long? = null
     private val vault by lazy { StoredAuth(this) }
     private val batch by lazy { getSharedPreferences("batch-result", MODE_PRIVATE) }
+    private val automatic by lazy { AutoSettings(this) }
+    private val autoListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        runOnUiThread { if (!isDestroyed && !isFinishing && !busy) render() }
+    }
     private var busy = false
     private var settings = false
     private var shelf = false
@@ -46,7 +50,16 @@ class StoreActivity : Activity() {
         out.putBoolean("settings", settings)
         out.putBoolean("shelf", shelf)
     }
-    override fun onResume() { super.onResume(); if (!busy) render() }
+    override fun onResume() {
+        super.onResume()
+        automatic.prefs.registerOnSharedPreferenceChangeListener(autoListener)
+        if (!busy) render()
+        AutoUpdates.startup(this)
+    }
+    override fun onPause() {
+        automatic.prefs.unregisterOnSharedPreferenceChangeListener(autoListener)
+        super.onPause()
+    }
     override fun onDestroy() { executor.shutdownNow(); super.onDestroy() }
 
     private fun page(heading: String) {
@@ -114,7 +127,7 @@ class StoreActivity : Activity() {
     }
 
     private fun stamp(time: Long) = StoreTime.local(time)
-    private fun row(r: Registration) = rowFor(r, android.os.Build.VERSION.SDK_INT <= 29) { Installation.installed(this, it) }
+    private fun row(r: Registration) = rowFor(r, android.os.Build.VERSION.SDK_INT <= 29, android.os.Build.VERSION.SDK_INT) { Installation.installed(this, it) }
     private fun addRow(r: Registration) {
         val info = row(r)
         val item = LinearLayout(this).apply {
@@ -128,10 +141,13 @@ class StoreActivity : Activity() {
             setBackgroundResource(color.resourceId)
             setOnClickListener { selected = r.repo; offset = 0; render() }
         }
-        item.addView(TextView(this).apply {
-            text = info.name; textSize = 16f; setTypeface(typeface, Typeface.BOLD)
-            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-        })
+        val heading=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
+        heading.addView(TextView(this).apply {
+            text=info.name.substringBeforeLast(" · Android"); textSize=16f; setTypeface(typeface,Typeface.BOLD)
+            maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END
+        },LinearLayout.LayoutParams(0,-2,1f))
+        heading.addView(TextView(this).apply { text=" Android"+info.name.substringAfterLast(" · Android"); textSize=13f })
+        item.addView(heading)
         item.addView(TextView(this).apply {
             text = if (info.status == "未導入") info.versions else "${info.versions}　${info.status}"
             textSize = 14f
@@ -173,6 +189,23 @@ class StoreActivity : Activity() {
             page("認証設定")
             label("共通PATは権限のある全repoで利用します。公開Releaseは原則匿名です。新しいprivate repoはGitHub側でトークンの対象に追加し、必要なら組織の承認を確認してください。期限切れ・失効時は新しいPATを登録してください。")
             button("共通PATの登録・変更・解除") { auth(null) }
+            fun option(title: String, checked: Boolean, change: (Boolean) -> Unit) {
+                panel.addView(CheckBox(this).apply { text=title; isChecked=checked
+                    setOnCheckedChangeListener { _, value -> change(value); AutoUpdates.schedule(this@StoreActivity) }
+                })
+            }
+            option("自動処理を一時停止", automatic.paused) { automatic.paused=it }
+            option("APKを自動取得", automatic.download) { automatic.download=it }
+            option("APK取得はWi-Fi接続時のみ", automatic.wifiOnly) { automatic.wifiOnly=it }
+            label("起動時（15分以内は再確認省略）と約6時間ごとに確認します。省電力等で実行が遅れる場合があります。メタデータ確認はモバイル回線でも行います。自動APK取得は単一APKの検査後、導入済みアプリの更新のみ保存します。")
+            label("自動整理は、自動取得分のうち導入完了済みの古い世代だけ。手動保存・インストール待ち・唯一の互換復旧APK・履歴は削除しません。安全な整理対象がなければ保留します。")
+            label(if(AutoUpdates.notificationsEnabled(this)) "更新通知は有効です。" else "更新通知は無効です。保存APKは一覧から開けます。")
+            button("通知を許可 / 通知設定") {
+                if(android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+                    requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),42)
+                else startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:$packageName")))
+            }
+            label(automatic.state())
             return
         }
         if (shelf) { library(); return }
@@ -184,6 +217,7 @@ class StoreActivity : Activity() {
             page(r.repo)
             label(if (r.previews) "最新の対象：正式版＋プレリリース" else "最新の対象：正式版のみ")
             label(latestSummary(r))
+            automatic.prefs.getString("repo:${r.repo}",null)?.let { label("自動/一括取得：$it") }
             button("更新を確認 / 再試行") { refresh(listOf(r)) }
             button("個別PATの設定・再認証") { auth(r) }
             button("登録を編集") { edit(r) }
@@ -219,6 +253,20 @@ class StoreActivity : Activity() {
         action("登録追加") { edit(null) }
         if (registrations.isNotEmpty()) action("一括更新確認") { checkAll(registrations) }
         panel.addView(actions)
+        panel.addView(Button(this).apply {
+            text="未取得の更新を一括ダウンロード"; isAllCaps=false
+            val candidates=AutoUpdates.manualCandidates(this@StoreActivity)
+            isEnabled=candidates.isNotEmpty() && !AutoUpdates.running.get()
+            setOnClickListener {
+                val bytes=candidates.sumOf { it.visible.first().assets.single().size }
+                fun begin(override: Boolean) { AutoUpdates.manual(this@StoreActivity,override) { runOnUiThread { if(!isDestroyed && !busy) render() } } }
+                if(automatic.wifiOnly && !networkState(this@StoreActivity).wifi)
+                    AlertDialog.Builder(this@StoreActivity).setMessage("Wi-Fi限定を今回だけ解除します。最大約 ${bytes/1024/1024+1} MiB（解析含む）を使用します。モバイル通信で取得しますか？")
+                        .setNegativeButton("戻る",null).setPositiveButton("今回のみ許可") { _,_ -> begin(true) }.show()
+                else begin(false)
+            }
+        })
+        label(automatic.state())
         batch.getString("summary", null)?.let { label(it) }
         itemsPage(registrations) { repo -> catalog.get(repo)?.let(::addRow) }
     }
@@ -285,7 +333,7 @@ class StoreActivity : Activity() {
             label("Asset ID ${a.id} · SHA-256 ${a.digest ?: "未提供"}")
             label("同一版はversionCodeの比較です。バイナリの一致はSHA-256で確認してください。")
             val meta = r.inspected[a.identity()]
-            label(meta?.let { "${it.summary}\n${Installation.status(this, it)}" } ?: "未解析 · packageName / versionCode 不明")
+            label(meta?.let { "${it.summary}\n${it.sdk.label}\n${it.sdk.detail}\n${Installation.status(this, it)}" } ?: "未解析 · packageName / versionCode 不明")
             if (meta == null) button("APK情報を確認") { work("APKを解析中…", { service.inspect(r, a) }) }
             button(if (service.saved(r, a) != null) "保存済みAPKを開く" else "保存してインストール確認へ") {
                 work("APKを準備中…", { service.save(r, h, a) }) { file -> render(); open(file) }
@@ -321,3 +369,4 @@ class StoreActivity : Activity() {
         }
     }
 }
+
