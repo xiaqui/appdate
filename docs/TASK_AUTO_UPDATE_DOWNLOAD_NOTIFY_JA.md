@@ -21,6 +21,8 @@ GitHub Actionsが公開した各repoのGitHub ReleasesをRelease Storeが検知�
 11. 一覧の**アプリ名の横**に対応Android OSを簡潔に表示する（例: `Android 6+`）。APKから確認できるminSdkVersionを下限としてOSバージョンへ変換する。上限は明示されたmaxSdkVersion等の信頼できる情報がある場合のみ表示し、なければ勝手に「Android 6〜10対応」と断定しない。targetSdkVersionは対応OS上限と混同しない。複数APK・未解析・解析失敗・OS適合不明は「要確認」等と表示し、詳細画面でminSdk/targetSdk/maxSdk（取得可能な範囲）と出典を示す。端末OSが下限未満なら非対応を視覚的に示し、自動ダウンロードの対象から除外する。表示名変更後もOS情報を正しいAPKに紐付ける。
 12. 自動更新の対象はRelease Storeが登録済みのrepoに限定する。PATによるrepo自動登録PR #4が未mergeの場合は、その未merge実装を前提にコードを書かず、現行mainの登録方式で成立させる。PR #4がmergeされた場合は最新mainへ追従する。外部Intent連携branchとも混在させない。
 
+13. **端末の実インストール状態を正本として照合する。** Release Store経由で取得・インストールしたかに関係なく、登録repoのAPKからpackageNameを安全に特定できた場合、Android PackageManagerで端末上の実際のインストール有無・versionName・versionCodeを取得し、トップの「導入」表示と更新判定へ反映する。保存APK履歴やRelease Store経由の操作履歴は別に保持し、保存しただけで導入済みと判定しない。端末に導入済みのForge・IP Messenger・Nearby Games等が「導入 不明」となる実機報告を回帰テストに含める。APK未解析・複数packageName候補・端末照合失敗時は推測せず「未確認」と表示し、未インストールと断定しない。起動・更新確認時、インストール後の復帰時に状態を再照合する。Android 6〜10で利用可能なAPIを使用し、他アプリの状態確認に不要な権限を要求しない。
+
 ## 非目標
 - 無人インストール、root、ADB初期権限付与、Shizuku、Device Owner化。
 - Android 12以降の無人更新API。
@@ -30,6 +32,6 @@ GitHub Actionsが公開した各repoのGitHub ReleasesをRelease Storeが検知�
 
 ## 実装・検収
 1. 最新main、xiaqui/rin/README.md・STYLE.md、AGENTS.md、README.md、TASK.md、既存PR/branchと現在のコードを確認し、同目的のPRがあれば重複作成しない。最新mainから独立branchを作成する。
-2. 起動時自動確認、Wi-Fi限定の定期取得、一括手動取得、通知、保存上限、表示名変更・repo改名・packageName変更、対応OS表示と非対応除外、再試行・中断・再起動・重複防止を単体/統合テストする。Android 6/API23と10/API29のAPI境界を重点確認する。
+2. 起動時自動確認、Wi-Fi限定の定期取得、一括手動取得、通知、保存上限、表示名変更・repo改名・packageName変更、対応OS表示と非対応除外、端末の実インストール状態と保存履歴の分離・照合、再試行・中断・再起動・重複防止を単体/統合テストする。Android 6/API23と10/API29のAPI境界を重点確認する。
 3. test、lint、CI、独立レビューを実施しP0/P1を修正する。実機検収はZ3TC(Android6)、Z4T(Android7)、Android8/9/10の代表端末で、起動・画面OFF・通信切替・通知タップ・インストールキャンセル・保存上限を確認する。実機未確認は合格扱いしない。
 4. commit/pushして独立PRを作成し、**社長の実機検収前にmergeしない**。PR URL、CI、APKの配送先、未確認項目を報告する。配送が必要ならGitHub Releasesの検収用プレビューを利用し、既存署名・版入り命名・Release乱造防止を守る。
