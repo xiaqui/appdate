@@ -45,10 +45,10 @@ adb shell dumpsys package "$pkg" | grep 'versionCode=8 '
 adb uninstall "$pkg"
 gradle installDebug installDebugAndroidTest
 test_class=jp.xiaqui.artifact.RepoImportFlowTest
-instrument seed
+instrument seed -e restartCheck true
 adb shell am force-stop "$pkg"
 instrument reopened -e restartCheck true
-instrument seed
+instrument seed -e restartCheck true
 adb reboot
 timeout 180 adb wait-for-device
 for i in {1..90}; do

@@ -59,6 +59,18 @@ class RepoImportTest {
             if (status == 403) assertTrue(report.error.contains("利用制限"))
         }
     }
+    @Test fun apiNamesAreNotFilteredByTokenLikeWords() {
+        assertEquals("owner/ghp_demo",remoteRepoName("Owner/ghp_demo"))
+        assertEquals("owner/github_pat_examples",remoteRepoName("owner/github_pat_examples"))
+        for (name in listOf("https://github.com/o/r", "o/../r", "o/r?token=x", "o/.."))
+            assertThrows(ImportFailure::class.java) { remoteRepoName(name) }
+    }
+    @Test fun changedTokenDuringEmptyResponseDoesNotReportSuccess() {
+        var current = true
+        val result = importRepos("fixture",{ _,_ -> current=false; RepoPage(emptyList(),false) },
+            { ImportChange.ADDED },current={current})
+        assertFalse(result.complete); assertTrue(result.error.contains("中断"))
+    }
     @Test fun codecReadsLegacyAndPreservesStableIdentity() {
         val r = Registration("o/r",false,"rev",githubId=42,remoteName="o/renamed")
         assertEquals(r,CatalogCodec.decode(CatalogCodec.encode(r)))

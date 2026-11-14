@@ -95,7 +95,7 @@ internal class Catalog(context: Context) {
         result
     }
     fun addRemote(remote: RemoteRepo): ImportChange = synchronized(lock) {
-        val name = repoName(remote.name)
+        val name = remoteRepoName(remote.name)
         val byId = names().mapNotNull(::get).firstOrNull { it.githubId == remote.id }
         val existing = byId ?: get(name)
         if (existing != null && existing.githubId != 0L && existing.githubId != remote.id)

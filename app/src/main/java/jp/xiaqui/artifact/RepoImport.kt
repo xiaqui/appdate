@@ -5,6 +5,14 @@ import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
+/** API field, not a pasted URL. Do not reject valid repository names containing token-like words. */
+internal fun remoteRepoName(value: String): String {
+    val parts = value.split('/')
+    if (parts.size != 2 || parts.any { !it.matches(Regex("[A-Za-z0-9_.-]{1,100}")) || it in listOf(".", "..") })
+        throw ImportFailure("repo識別情報が不正です。")
+    return value.lowercase()
+}
+
 internal data class RemoteRepo(val id: Long, val name: String)
 internal data class RepoPage(val repos: List<RemoteRepo>, val more: Boolean)
 internal data class ImportReport(val fetched: Int = 0, val added: Int = 0, val retained: Int = 0,
@@ -47,7 +55,7 @@ internal class GitHubRepos(private val connect: (URL) -> HttpURLConnection = { i
                 val row = rows.getJSONObject(it)
                 val id = row.getLong("id")
                 if (id <= 0) throw ImportFailure("repo識別情報が不正です。")
-                RemoteRepo(id, repoName(row.getString("full_name")))
+                RemoteRepo(id, remoteRepoName(row.getString("full_name")))
             }
             val more = connection.getHeaderField("Link").orEmpty().split(',').any {
                 Regex(";\\s*rel=\"next\"").containsMatchIn(it)
@@ -69,6 +77,7 @@ internal fun importRepos(token: String, fetch: (String, Int) -> RepoPage,
         while (true) {
             if (Thread.currentThread().isInterrupted || !current()) throw InterruptedException()
             val result = fetch(token, page)
+            if (Thread.currentThread().isInterrupted || !current()) throw InterruptedException()
             for (repo in result.repos) {
                 if (Thread.currentThread().isInterrupted || !current()) throw InterruptedException()
                 if (!seen.add(repo.id)) continue
@@ -84,6 +93,7 @@ internal fun importRepos(token: String, fetch: (String, Int) -> RepoPage,
             if (result.repos.isEmpty() || page == 10000) throw ImportFailure("列挙を完了できませんでした。取得済み登録を保持します。再取得してください。")
             page++
         }
+        if (Thread.currentThread().isInterrupted || !current()) throw InterruptedException()
         report = report.copy(complete = true)
     } catch (e: Exception) {
         report = report.copy(error = when (e) {

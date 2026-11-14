@@ -47,6 +47,7 @@ class RepoImportFlowTest {
     }
     // Separate instrumentation processes, also run across adb reboot in CI.
     @Test fun seed() {
+        org.junit.Assume.assumeTrue(InstrumentationRegistry.getArguments().getString("restartCheck") == "true")
         Catalog(context).addRemote(RemoteRepo(990,"import-test/restart"))
     }
     @Test fun reopened() {
