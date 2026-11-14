@@ -1,17 +1,16 @@
-# TASK — 共通PATによるrepo一括自動登録
+# TASK — 自動更新確認・無人APK取得・通知インストール
 
 ## 現在の実行対象（唯一）
-**docs/TASK_PAT_REPO_AUTO_IMPORT_JA.md** を今回の実装仕様・検収条件の正本とする。最新mainとxiaqui/rin/README.mdに従う共通資料、AGENTS.md、README.md、関連コード、既存PR、進行中branchを確認してから着手する。
+**docs/TASK_AUTO_UPDATE_DOWNLOAD_NOTIFY_JA.md** を今回の実装仕様・検収条件の正本とする。最新main、xiaqui/rinの共通資料、AGENTS.md、README.md、関連コード、既存PR・進行中branchを確認する。
 
-今回の依頼「xiaqui/artifact の最新TASK.mdに従って完走」は、**この自動登録タスクのみ**を意味する。過去のPhase 1や外部Intent連携を再実装したり、別のTODOを自動的に消化したりしない。
+今回の実装対象は「起動時・定期の自動更新確認、Wi-Fi優先のAPK自動取得、通知タップによる標準インストーラ起動、既存3世代保存上限との安全な連携」のみ。無人インストールやADB/Shizuku権限拡張は行わない。
 
-## 進め方と完了条件
-1. 最新mainから自動登録専用の新規branchを作る。進行中の `work/external-intents` と変更を混在させない。既存PRが同目的で存在すれば重複作成せず現状を確認する。
-2. 共通PATの保存・変更を契機に、列挙APIが返す全repoを機械的に登録する。再取得は追加専用。細部は上記仕様書に従い、手動登録・削除、共通/個別PAT、既存データを保持する。
-3. テスト・lint・CI・独立レビュー・P0/P1修正を完了する。実機未確認を合格扱いしない。
-4. 実装をcommit/pushし、PRを作成する。**PRはマージせず実機検収待ちで停止**する。結果としてPR URL、CI、実機検収項目、GitHub API列挙制限を報告する。
-5. APKの配送が必要ならGitHub Releasesを使い、xiaqui/rin/STYLE.mdの版入り命名・Release乱造防止を守る。単なるpushや文書更新では新Releaseを作らない。
+## 着手と完了条件
+1. 最新mainから専用branchを作る。同目的の既存PRがあれば重複作成しない。
+2. PAT自動登録PR #4（work/pat-repo-auto-import）は**別タスクとして既にPR作成済み・実機検収待ち**。勝手にmergeせず、そのbranchの変更を本タスクへ混ぜない。未mergeでも現行mainの登録repoで動作すること。
+3. 詳細仕様に沿って実装し、test・lint・CI・独立レビュー・P0/P1修正を実施する。Android 6〜10の互換性と保存データ保護を維持する。
+4. commit/pushして独立PRを作り、**実機検収前にmergeしない**。必要なプレビューAPKのみGitHub Releasesへ配送し、検収項目と未完了を報告する。
 
-## 過去タスク
-Phase 1、PR #1/#2/#3、v0.4.2正式Releaseは完了済み。以前の詳細・実機観察は `docs/TASK_POST_PHASE1_JA.md`、`README.md`、GitHub履歴を参照する。下記旧TASK本文は履歴として保存し、**現在の実行指示として扱わない**。
-
+## 前タスクと履歴
+- 共通PATによるrepo自動登録: **PR #4**。仕様: `docs/TASK_PAT_REPO_AUTO_IMPORT_JA.md`。PRの検収・merge判断は別途継続し、このTASK切替で完了扱いにしない。
+- Phase 1、PR #1/#2/#3、正式v0.4.2: 完了済み。以前のTASK本文は `docs/TASK_PHASE1_ARCHIVE_2026-11-14_JA.md` に保存済み。
