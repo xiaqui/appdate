@@ -29,7 +29,7 @@ class StoreActivity : Activity() {
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        // Keep normal store screens capturable; protect PAT entry dialogs separately.
         catalog = Catalog(this)
         service = StoreService(this, catalog)
         selected = state?.getString("repo")
