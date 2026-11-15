@@ -9,6 +9,7 @@ import android.text.InputType
 import android.view.View
 import android.view.WindowManager
 import android.widget.*
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -63,9 +64,15 @@ class StoreActivity : Activity() {
     override fun onDestroy() { executor.shutdownNow(); super.onDestroy() }
 
     private fun page(heading: String) {
-        title = "Release Store"
+        title = "AppDate"
         panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad,pad,pad,pad) }
-        setContentView(ScrollView(this).apply { addView(panel) })
+        val content = ScrollView(this).apply { addView(panel) }
+        if (heading == "AppDate") {
+            setContentView(SwipeRefreshLayout(this).apply {
+                addView(content)
+                setOnRefreshListener { swipeRefresh(this) }
+            })
+        } else setContentView(content)
         label(heading, true)
     }
     private fun label(value: String, heading: Boolean = false) {
@@ -177,6 +184,33 @@ class StoreActivity : Activity() {
         })
     }
 
+    /** The pull gesture refreshes metadata without replacing the home screen with progress text. */
+    private fun swipeRefresh(indicator: SwipeRefreshLayout) {
+        if (busy) { indicator.isRefreshing = false; return }
+        val repos = catalog.names()
+        if (repos.isEmpty()) { indicator.isRefreshing = false; return }
+        busy = true
+        batch.edit().putString("summary", "前回の一括確認は未完了").commit()
+        executor.execute {
+            val result = runCatching {
+                val summary = batchSummary(repos) { repo ->
+                    catalog.get(repo)?.let(service::refresh)
+                    catalog.get(repo)?.let(::row)
+                }
+                if (!batch.edit().putString("summary", summary).commit())
+                    throw ImportFailure("更新確認結果を保存できません。")
+            }
+            runOnUiThread {
+                if (!isDestroyed && !isFinishing) {
+                    busy = false
+                    indicator.isRefreshing = false
+                    render()
+                    result.exceptionOrNull()?.let { notice(if (it is Exception) storeError(it) else "更新確認に失敗しました。") }
+                }
+            }
+        }
+    }
+
     private fun <T> itemsPage(items: List<T>, draw: (T) -> Unit) {
         val pageSize = 20
         val start = offset.coerceIn(0, (items.size - 1).coerceAtLeast(0) / pageSize * pageSize)
@@ -238,7 +272,7 @@ class StoreActivity : Activity() {
             return
         }
         selected = null
-        page("アプリ一覧")
+        page("AppDate")
         val registrations = catalog.names()
         val actions = LinearLayout(this).apply {
             orientation = if (resources.configuration.fontScale > 1.4f ||
