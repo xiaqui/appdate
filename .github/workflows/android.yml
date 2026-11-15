@@ -116,12 +116,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v8
         with:
           name: ReleaseStore-preview.apk
           path: delivery
           skip-decompress: true
-      - uses: actions/checkout@v4
       - name: Verify Release Asset and publish rename preview
         env:
           GH_TOKEN: ${{ github.token }}
