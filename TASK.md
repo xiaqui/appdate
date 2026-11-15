@@ -1,23 +1,21 @@
-# TASK — リポジトリ改名時の登録データ移行
+# TASK — AppDate 統合の次工程
 
-## 現在のWork実行対象（唯一）
+## 現在のWork実行対象（唯一）：PR #4の自動登録フィルタ
 
-**`docs/TASK_REPO_RENAME_MIGRATION_JA.md`** を今回の実装・検証・完了条件の正本とする。社長がWorkへ「TASKに従って完走」と指示した場合は、**この改名対応タスクだけ**を実行する。最新の `xiaqui/rin` README/STYLE と、このrepoの最新main・AGENTS.md・README.md・当該docs・open PR・進行branchを確認し、仕様をコピペで再入力させない。
+**既存PR #4（`work/pat-repo-auto-import`）** に、`docs/TASK_PAT_REPO_AUTO_IMPORT_JA.md` の2026-11-16改訂仕様を実装する。最新の `xiaqui/rin` README/STYLE、当repoのAGENTS.md、最新main、PR #4の最新headと差分を確認する。新規PRを乱立させず**PR #4を更新**すること。
 
-GitHub上のリポジトリ自体の改名、visibilityの変更、既存PRのマージは**実行しない**。現時点のrepo名は `xiaqui/artifact` のまま。既存登録・保存APK・履歴・認証情報を壊さず、改名に備える。
+**確定条件：公開/非公開を問わず、過去のGitHub ReleasesにAPK assetが一つ以上あるrepoだけを自動追加する。** 最新Releaseだけで判定せず、ページネーションと401/403/404/429・部分失敗・未確認状態を区別する。既存の手動登録、個別PAT、Release履歴、APK、現存登録は自動削除しない。repo同一性はGitHub IDで確認し、PR #7でmainに入った改名保護を壊さない。
 
-## 着手から完了まで
+1. 完了済み工程の再実装や環境構築を繰り返さず、PR #4の最新headを現在のmainに安全に追従させ、競合を解消する。
+2. 対象絞り込みを実装し、Android 6/10の境界、単体/計装テスト、lint、Actions CI、独立レビューとP0/P1/P2修正まで進める。
+3. 必要な場合に限って固定署名preview APKをGitHub Releaseへ一つ配送し、ビルド元SHA・署名・上書き互換性を検証する。
+4. 成果をcommit/pushしPR #4に反映。社長の実機再検収前にmergeしない。既存の登録を一括削除する処理は追加しない。
 
-1. 同目的の既存PRの有無を最新のGitHubで確認。なければ最新mainから専用branchを作成する。
-2. 詳細仕様に従い実装し、単体・必要な計装テスト、lint、GitHub Actions CI、独立レビュー、P0/P1修正まで自走する。Android 6〜10を維持し、PAT・署名鍵を露出させない。
-3. commit/push、独立PR作成または更新、検収用APKが必要なら固定鍵署名と版を確認して必要最小限のGitHub Release配送まで行う。文書変更だけでReleaseを量産しない。
-4. PR URL・最新head・CI・レビュー・移行試験結果・未確認の実機検収項目を報告する。**社長の実機検収前にマージしない**。
+## 並行して保全する作業
 
-## 他の進行中作業（今回の実行対象外）
+- **PR #5** スクリーンショット撮影修正：旧headを保持してmain取り込み・競合解消済み。通常画面は撮影可能、PAT入力ダイアログのみ保護。検証APKと実機スクショ検収が未完了のため**マージ保留**。
+- **PR #6** 自動更新確認、Wi-Fi取得、通知：既存の実装と検証成果を保持。PR #4と混ぜない。main追従・独立レビュー・配送・実機検収が必要。
+- **PR #7** 改名対応：CI、実機検収合格によりmainへマージ済み。繰り返さない。
+- **後続独立タスク**：アプリ表示名/APKをAppDateに統一（packageNameと署名は変更しない）。配布元はGitHub repository ID、アプリはAndroid packageName、配布物はRelease/Asset IDという3層管理へ安全に移行する。
 
-- **PR #4** 共通PATによるrepo自動登録。仕様: `docs/TASK_PAT_REPO_AUTO_IMPORT_JA.md`。公開/非公開の区別なくAPK付きReleaseのあるrepoを自動登録する方向へ仕様を更新する課題は、PR #4側で扱う。このTASKからbranchを変更・mergeしない。
-- **PR #5** スクリーンショット保護範囲。別タスク。変更・mergeしない。
-- **PR #6** 起動時・定期自動確認、Wi-Fi APK取得、通知など。仕様: `docs/TASK_AUTO_UPDATE_DOWNLOAD_NOTIFY_JA.md`。すでに別PRで進行しているため、今回のWork指示では再実装・変更・mergeしない。
-- Phase 1、PR #1/#2/#3、正式v0.4.2は完了済み。旧仕様は `docs/TASK_PHASE1_ARCHIVE_2026-11-14_JA.md` に保持。
-
-今後別タスクへ切り替えるときは、この「現在のWork実行対象」を明示的に差し替える。Workが古いTASKを推測で再実行しない。
+社長への指示は原則「TASKに従って完走」の一言でよい。別タスクへ移るときは、本書の「現在のWork実行対象」を明示的に差し替え、古いタスクを誤って再実行しない。
