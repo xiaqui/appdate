@@ -1,8 +1,8 @@
 # 次期TASK：共通PATによるrepo一括登録
 
-作成: 2026-11-14
-状態: **PR #4で実装・CI・独立レビュー・0.4.3検収APK配送完了。実機検収待ち・未マージ。外部Intent連携とは別タスク。**
-対象: xiaqui/artifact / Android 6〜10
+作成: 2026-11-14（2026-11-16にPublic/Private条件とrepo名を更新）
+状態: **PR #4でAPK配布履歴フィルタを実装・検証中。実機再検収待ち、未マージ。**
+対象: xiaqui/appdate / Android 6〜10
 
 ## 着手前の現在地
 - Phase 1 PR #1、改善PR #2、正式Release PR #3 はmerge済み。正式版 v0.4.2 のGitHub Release（asset: ReleaseStore-0.4.2.apk）は公開済み。これらを再実装・再配送しない。
@@ -10,7 +10,20 @@
 - 外部Intent連携の実装branchやファイルを、このタスクのために勝手に上書きしない。着手時に最新main・関連PR・branch・AGENTS.md・README.md・TASK.md・docsを再取得し、別branch/PRで作業する。
 - 共通PATのAndroid Keystore暗号化保存、既存の手動repo登録・削除・repo別PATは維持する。
 
-## 目的・確定仕様
+## 追加課題（2026-11-14、0.4.3実機検収後の仕様変更）
+
+社長の実機確認で、共通PATによる自動登録は動作したが、公開repoやAPKを配布しないrepoまで大量に登録されることが判明した。**自動登録対象を「Public/Privateを問わず、過去のGitHub Releasesに少なくとも1つAPK assetが存在するrepo」に限定する。** これは以下の旧仕様「全件登録」に優先する。
+
+1. PAT列挙結果の公開・非公開repoをともに候補にし、各候補のGitHub Releasesのassetを確認する。最新ReleaseにAPKがなくても過去のReleaseにAPKがあれば対象。`.apk` 拡張子だけでなく取得可能なRelease assetとして判定し、GitHub Actions Artifactsやソースコードの言語（Kotlin/Java等）は判定根拠にしない。
+2. APK配布履歴のないrepoは公開・非公開にかかわらず**自動追加しない**。ただし手動登録は公開・非公開・APK有無を問わず従来どおり許可する。
+3. 共通PATの保存・変更時と「repoを再取得」時に未登録候補を再評価する。将来APKが公開されたrepoは次回の再取得で追加可能とする。既存登録は追加専用の原則を維持し、公開repo・APKなしrepoも**勝手に削除しない**。
+4. Release取得の401/403/404、権限不足、API制限、通信断、ページ取得途中失敗は「APKなし」と断定せず判定保留・再試行可能にする。過去Releaseのページネーションを考慮し、未走査ページがある場合は「APKなし」と確定しない。取得件数・追加件数・保留件数と理由を表示する。PATをログへ漏らさない。
+5. 公開/非公開とAPK有無の組み合わせ（公開＋APKありも自動追加）、最新ReleaseにAPKがないが過去にあるケース、未配布から配布開始、既存登録の保持、API途中失敗、手動登録の例外をテストする。Android 6〜10互換性を維持する。
+6. 本変更は**PR #4と同じ目的の実機フィードバック修正**。PR #4のbranchへ追記して検証し、実機再検収までmergeしない。別目的の現行TASK（自動更新・取得）や外部Intentのbranchへ混ぜない。新しいAPKが必要な場合のみ検収用previewを配送する。
+
+## 旧仕様（PR #4の0.4.3時点。上記追加課題が優先）
+
+### 目的・確定仕様
 社長がGitHub側でfine-grained PATの対象repoを管理するため、Release Store側で二重の選別をしない。**共通PATでAPIから列挙できるrepoを、機械的にすべて登録する。**
 
 1. 共通PATの初回保存・変更後、PATで列挙できるリポジトリを取得し、すべて自動追加する。APKやReleaseの有無、公開/非公開、リポジトリ名によるフィルタは設けない。
@@ -28,12 +41,11 @@
 - 既存の手動登録・削除・更新確認・共通PAT暗号化保存・repo別PAT・保存APK・外部Intent経路を壊さない。
 - Android 6/API23 と Android 10/API29 を中心に単体テスト、lint、CI、独立レビュー、P0/P1修正を実施する。端末固有の挙動は実機検収待ちとして明示する。
 - xiaqui/rin/STYLE.mdのRelease乱造防止と版入りAPK名規則に従う。通常pushやdocs変更で新Releaseを作らない。APK配送が必要な場合のみ明示的に実施する。
-- **この機能は別PRで作成し、社長の実機検収前にマージしない。** 完了時はPR、CI、検収項目、APIの列挙制限を報告する。
+- **追加フィルタは既存PR #4のbranchで実装し、社長の実機検収前にマージしない。** 完了時はPR、CI、検収項目、APIの列挙制限を報告する。
 
 ## 非目標
 - GitHub上のPAT権限設定をアプリから変更すること。
-- Release/APKの有無による自動登録候補の絞り込み。
+- GitHub側のリポジトリvisibility変更や権限設定の自動操作。
 - 確認画面や登録候補の手動選択。
 - PATから外したrepoの自動削除。
 - 他repoの署名Secrets・GitHub Actionsをこのタスクから変更すること。
-

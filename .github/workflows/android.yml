@@ -1,7 +1,7 @@
 name: Personal Release Store
 on:
   push:
-    branches: ['work/phase1-installer', 'work/pat-repo-auto-import']
+    branches: ['work/pat-repo-auto-import']
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -56,9 +56,10 @@ jobs:
           if [[ -n "$EXPECTED_CERT" ]]; then test "${cert,,}" = "${EXPECTED_CERT,,}"; fi
           "$bt/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging"
           grep -E "^(package:|sdkVersion:|targetSdkVersion:)" "$RUNNER_TEMP/badging"
-          grep -F "versionCode='8' versionName='0.4.3'" "$RUNNER_TEMP/badging"
           grep -Fx "sdkVersion:'23'" "$RUNNER_TEMP/badging"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          grep -F "package: name='jp.xiaqui.artifact.store.preview' versionCode='11' versionName='0.7.1'" "$RUNNER_TEMP/badging"
+          stat -c '%s bytes' "$apk"
           cp "$apk" ReleaseStore-preview.apk
           { echo "$GITHUB_SHA"; sha256sum ReleaseStore-preview.apk; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
@@ -110,32 +111,39 @@ jobs:
 
   preview:
     needs: [verify, device]
-    if: (github.ref == 'refs/heads/work/phase1-installer' || github.ref == 'refs/heads/work/pat-repo-auto-import') && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
+    if: github.ref == 'refs/heads/work/pat-repo-auto-import' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v8
         with:
           name: ReleaseStore-preview.apk
           path: delivery
           skip-decompress: true
-      - name: Verify private Release Asset and publish preview
+      - name: Verify Release Asset and publish APK-filtered import preview
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          apk=delivery/ReleaseStore-v0.4.3-preview.apk
+          apk=delivery/ReleaseStore-v0.7.1-preview.apk
           mv delivery/ReleaseStore-preview.apk "$apk"
-          tag="store-preview-${GITHUB_SHA:0:12}"
+          export PREVIEW_TAG="store-preview-${GITHUB_SHA:0:12}"
+          export PREVIEW_SOURCE="$GITHUB_SHA"
           sha=$(sha256sum "$apk" | cut -d' ' -f1)
-          if ! gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$tag" "$apk" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Release Store 0.4.3 · PAT repo auto-import" --notes "PAT repo auto-import 0.4.3 (8), fixed-key signed preview. Source: $GITHUB_SHA. SHA-256: $sha"
+          state=$(python .github/release/check-preview.py)
+          if [[ "$state" == absent ]]; then
+            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title 'Release Store 0.7.1 · APK-filtered PAT import' --notes "APK-filtered PAT repository import preview 0.7.1 (11). Source: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. PR #5/#6 and later AppDate naming changes are not included."
+          fi
+          if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PREVIEW_TAG" --jq '.assets[].name' | grep -Fxq ReleaseStore-v0.7.1-preview.apk; then
+            gh release upload "$PREVIEW_TAG" "$apk" -R "$GITHUB_REPOSITORY"
           fi
           mkdir -p verify
-          gh release download "$tag" -R "$GITHUB_REPOSITORY" --pattern 'ReleaseStore-v0.4.3-preview.apk' --dir verify
-          cmp "$apk" verify/ReleaseStore-v0.4.3-preview.apk
-          gh release edit "$tag" -R "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+          gh release download "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --pattern ReleaseStore-v0.7.1-preview.apk --dir verify
+          cmp "$apk" verify/ReleaseStore-v0.7.1-preview.apk
+          python .github/release/check-preview.py
+          gh release edit "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+          python .github/release/check-preview.py --published
           echo "APK SHA-256: $sha" >> "$GITHUB_STEP_SUMMARY"
-

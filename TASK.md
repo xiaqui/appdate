@@ -1,22 +1,21 @@
-# TASK — 共通PATによるrepo一括自動登録
+# TASK — AppDate 統合の次工程
 
-## 現在の実行対象（唯一）
-**docs/TASK_PAT_REPO_AUTO_IMPORT_JA.md** を今回の実装仕様・検収条件の正本とする。最新mainとxiaqui/rin/README.mdに従う共通資料、AGENTS.md、README.md、関連コード、既存PR、進行中branchを確認してから着手する。
+## 現在のWork実行対象（唯一）：PR #4の自動登録フィルタ
 
-今回の依頼「xiaqui/artifact の最新TASK.mdに従って完走」は、**この自動登録タスクのみ**を意味する。過去のPhase 1や外部Intent連携を再実装したり、別のTODOを自動的に消化したりしない。
+**既存PR #4（`work/pat-repo-auto-import`）** に、`docs/TASK_PAT_REPO_AUTO_IMPORT_JA.md` の2026-11-16改訂仕様を実装する。最新の `xiaqui/rin` README/STYLE、当repoのAGENTS.md、最新main、PR #4の最新headと差分を確認する。新規PRを乱立させず**PR #4を更新**すること。
 
-## 進め方と完了条件
-1. 最新mainから自動登録専用の新規branchを作る。進行中の `work/external-intents` と変更を混在させない。既存PRが同目的で存在すれば重複作成せず現状を確認する。
-2. 共通PATの保存・変更を契機に、列挙APIが返す全repoを機械的に登録する。再取得は追加専用。細部は上記仕様書に従い、手動登録・削除、共通/個別PAT、既存データを保持する。
-3. テスト・lint・CI・独立レビュー・P0/P1修正を完了する。実機未確認を合格扱いしない。
-4. 実装をcommit/pushし、PRを作成する。**PRはマージせず実機検収待ちで停止**する。結果としてPR URL、CI、実機検収項目、GitHub API列挙制限を報告する。
-5. APKの配送が必要ならGitHub Releasesを使い、xiaqui/rin/STYLE.mdの版入り命名・Release乱造防止を守る。単なるpushや文書更新では新Releaseを作らない。
+**確定条件：公開/非公開を問わず、過去のGitHub ReleasesにAPK assetが一つ以上あるrepoだけを自動追加する。** 最新Releaseだけで判定せず、ページネーションと401/403/404/429・部分失敗・未確認状態を区別する。既存の手動登録、個別PAT、Release履歴、APK、現存登録は自動削除しない。repo同一性はGitHub IDで確認し、PR #7でmainに入った改名保護を壊さない。
 
-## 現在の進捗
+1. 完了済み工程の再実装や環境構築を繰り返さず、PR #4の最新headを現在のmainに安全に追従させ、競合を解消する。
+2. 対象絞り込みを実装し、Android 6/10の境界、単体/計装テスト、lint、Actions CI、独立レビューとP0/P1/P2修正まで進める。
+3. 必要な場合に限って固定署名preview APKをGitHub Releaseへ一つ配送し、ビルド元SHA・署名・上書き互換性を検証する。
+4. 成果をcommit/pushしPR #4に反映。社長の実機再検収前にmergeしない。既存の登録を一括削除する処理は追加しない。
 
-専用branch `work/pat-repo-auto-import`、[PR #4](https://github.com/xiaqui/artifact/pull/4) で実装・CI・独立レビュー・検収APK配送を完了。実機未検収・未マージ。検証と配送の最新結果はPRおよび `docs/WORK_PAT_REPO_IMPORT_JA.md` を参照。外部Intent branchは保持。
+## 並行して保全する作業
 
-## 過去タスク
-Phase 1、PR #1/#2/#3、v0.4.2正式Releaseは完了済み。以前の詳細・実機観察は `docs/TASK_POST_PHASE1_JA.md`、`README.md`、GitHub履歴を参照する。下記旧TASK本文は履歴として保存し、**現在の実行指示として扱わない**。
+- **PR #5** スクリーンショット撮影修正：旧headを保持してmain取り込み・競合解消済み。通常画面は撮影可能、PAT入力ダイアログのみ保護。検証APKと実機スクショ検収が未完了のため**マージ保留**。
+- **PR #6** 自動更新確認、Wi-Fi取得、通知：既存の実装と検証成果を保持。PR #4と混ぜない。main追従・独立レビュー・配送・実機検収が必要。
+- **PR #7** 改名対応：CI、実機検収合格によりmainへマージ済み。繰り返さない。
+- **後続独立タスク**：アプリ表示名/APKをAppDateに統一（packageNameと署名は変更しない）。配布元はGitHub repository ID、アプリはAndroid packageName、配布物はRelease/Asset IDという3層管理へ安全に移行する。
 
-
+社長への指示は原則「TASKに従って完走」の一言でよい。別タスクへ移るときは、本書の「現在のWork実行対象」を明示的に差し替え、古いタスクを誤って再実行しない。

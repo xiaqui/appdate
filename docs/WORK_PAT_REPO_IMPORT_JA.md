@@ -1,5 +1,13 @@
 # 共通PAT repo自動登録 作業記録
 
+## 2026-11-16 APK配布履歴フィルタへの更新
+
+repo改名後の最新main（PR #7統合済み）へ追従し、旧版の「列挙repoを全件追加」を変更した。未登録候補だけについて、公開済みGitHub Releaseを全ページ走査し、アップロード済み・サイズありの `.apk` assetが一つ以上あるrepoだけを追加する。既存登録は走査対象にせず保持する。API失敗やページ途中の失敗は「配布なし」にせずrepo単位で判定保留とし、他候補の確認を継続する。
+
+GitHub IDの照合・新規登録にはmainの `Catalog.registeredIdentity` とID付き `register` を利用し、改名履歴、同名別ID、既存設定、認証、履歴、保存APKを保護する。名前変更を検出しても自動でキーを移動せず、PR #7の登録編集経路へ委ねる。
+
+検証版は0.7.1 / versionCode 11。PR #5/#6、AppDate表示名・APK名変更は含めない。CI・独立レビュー・検収Releaseの結果は完了後に追記する。実機再検収前にマージしない。
+
 2026-11-14。最新TASK.mdの唯一の対象を実装。基準mainは `cf9163d0f875ad2ec9891341d4ae7251054ce3b6`、branchは `work/pat-repo-auto-import`、PRは [#4](https://github.com/xiaqui/artifact/pull/4)。Phase 1・正式Release・外部Intent作業を再実装していない。
 
 ## 実装

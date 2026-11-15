@@ -174,7 +174,7 @@ class StoreActivity : Activity() {
             page("認証設定")
             label("共通PATは権限のある全repoで利用します。公開Releaseは原則匿名です。新しいprivate repoはGitHub側でトークンの対象に追加し、必要なら組織の承認を確認してください。期限切れ・失効時は新しいPATを登録してください。")
             button("共通PATの登録・変更・解除") { auth(null) }
-            label("共通PAT保存後、APIが列挙した全repoを自動追加します。Releaseの有無で選別しません。再取得は追加専用です。APIに出ないrepoは手動登録してください。")
+            label("共通PAT保存後、APIが列挙した未登録repoのRelease履歴を確認し、APK配布履歴があるrepoだけを自動追加します。再取得は追加専用です。既存登録は削除しません。APIに出ないrepoは手動登録してください。")
             button("repoを再取得") { importCommon() }
             imports.getString("summary", null)?.let { label(it) }
             return
@@ -186,10 +186,9 @@ class StoreActivity : Activity() {
             if (release != null) { assets(r, release); return }
             releaseId = null
             page(r.repo)
+            if (catalog.pendingAuth() != null) label("認証移行の完了待ち。登録を編集→保存で再試行してください。旧認証は保持しています。")
             label(if (r.previews) "最新の対象：正式版＋プレリリース" else "最新の対象：正式版のみ")
             label(latestSummary(r))
-            if (r.remoteName.isNotEmpty() && r.remoteName != r.repo)
-                label("GitHubの現在の名前：${r.remoteName}。既存の個別PAT・履歴を保持するため自動改名していません。必要なら手動登録してください。")
             button("更新を確認 / 再試行") { refresh(listOf(r)) }
             button("個別PATの設定・再認証") { auth(r) }
             button("登録を編集") { edit(r) }
@@ -202,7 +201,7 @@ class StoreActivity : Activity() {
             button("登録を削除") {
                 AlertDialog.Builder(this).setMessage("${r.repo}の登録と取得キャッシュを削除します。保存したAPKは残ります。")
                     .setNegativeButton("戻る", null).setPositiveButton("登録を削除") { _, _ ->
-                        try { vault.forget(r.repo); if (catalog.remove(r.repo)) selected = null }
+                        try { synchronized(repoDataLock) { RepoMigration(this, catalog, vault).finishAuth(); catalog.requireIdle(); vault.forget(r.repo); if (catalog.remove(r.repo)) selected = null } }
                         catch (e: ImportFailure) { notice(e.message.orEmpty()) }
                         render()
                     }.show()
@@ -236,16 +235,45 @@ class StoreActivity : Activity() {
         val fields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(pad,0,pad,0); addView(field); addView(preview)
         }
-        val dialog = AlertDialog.Builder(this).setTitle("リポジトリ登録").setView(fields)
+        if (r != null) fields.addView(Button(this).apply {
+            text = "中断復旧：未登録の変更先PATを解除"
+            setOnClickListener {
+                try {
+                    val name = repoName(field.text.toString())
+                    AlertDialog.Builder(this@StoreActivity)
+                        .setMessage("変更先「$name」に中断時の個別PATが残った場合のみ解除します。旧登録「${r.repo}」の認証・履歴・APKは保持します。解除後に保存を再試行してください。")
+                        .setNegativeButton("戻る", null)
+                        .setPositiveButton("変更先PATを解除") { _, _ ->
+                            try {
+                                RepoMigration(this@StoreActivity, catalog, vault).clearUnregisteredDestination(r.repo, name)
+                                notice("変更先PATを解除しました。保存を再試行してください。")
+                            } catch (e: ImportFailure) { notice(e.message.orEmpty()) }
+                        }.show()
+                } catch (e: ImportFailure) { field.error = e.message }
+            }
+        })
+        val dialog = AlertDialog.Builder(this).setTitle(if (r == null) "リポジトリ登録" else "登録を編集（改名はGitHub IDを確認）").setView(fields)
             .setNegativeButton("戻る", null).setPositiveButton("保存", null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 try {
                     val name = repoName(field.text.toString())
-                    if (r != null && r.repo != name && catalog.get(name) == null) vault.forget(r.repo)
-                    val updated = catalog.register(r?.repo, name, preview.isChecked)
-                    selected = updated.repo; releaseId = null
-                    dialog.dismiss(); render()
+                    val previews = preview.isChecked
+                    if (r != null) {
+                        dialog.dismiss()
+                        work("GitHub ID・認証を確認して登録を保存中…", {
+                            RepoMigration(this, catalog, vault).rename(r, name, previews)
+                        }) { updated ->
+                            selected = updated.repo; releaseId = null; render()
+                            notice(if (r.repo == updated.repo) "設定を保存しました。" else
+                                "現在名：${updated.repo}\nRelease履歴・APK解析・取得日時・状態・個別認証・保存APK参照を保持して移行しました。")
+                        }
+                    } else {
+                        dialog.dismiss()
+                        work("登録を保存中…", { RepoMigration(this, catalog, vault).register(name, previews) }) { updated ->
+                            selected = updated.repo; releaseId = null; render()
+                        }
+                    }
                 } catch (e: ImportFailure) { field.error = e.message }
             }
         }
@@ -283,7 +311,9 @@ class StoreActivity : Activity() {
         work("repoを取得中…", {
             synchronized(importLock) {
                 val token = vault.commonToken() ?: throw ImportFailure("共通PATを登録してください。手動登録も利用できます。")
-                importRepos(token, GitHubRepos()::page, catalog::addRemote,
+                catalog.requireIdle()
+                importRepos(token, GitHubRepos()::page, GitHubApkReleases()::page,
+                    catalog::observeRemote, catalog::addRemote,
                     current = { vault.commonToken() == token }, progress = { report ->
                         if (!imports.edit().putString("summary", report.summary).commit())
                             throw ImportFailure("取得結果を保存できません。登録済みrepoは保持しています。")
