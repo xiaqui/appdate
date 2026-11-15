@@ -266,7 +266,7 @@ class StoreActivity : Activity() {
                 else begin(false)
             }
         })
-        label(automatic.state())
+        // Background update progress belongs in Settings and notifications, not the app list.
         batch.getString("summary", null)?.let { label(it) }
         itemsPage(registrations) { repo -> catalog.get(repo)?.let(::addRow) }
     }
