@@ -53,7 +53,8 @@ class AutoUpdateTest {
             val r=Registration("fixture/$name",true,"r",1,"",listOf(StoreRelease(1,"v3","2026",false,listOf(asset))),mapOf(asset.identity() to meta))
             val display=rowFor(r,true,23) { pkg -> assertEquals("pkg",pkg); installed }
             assertTrue(display.name.contains("$name · Android 6+"))
-            assertTrue(display.versions.contains("導入 2 (2)")); assertEquals("更新候補",display.status)
+            assertEquals("導入 2 → 最新 2",display.versions); assertEquals("更新候補",display.status)
+            assertFalse(display.versions.contains("(2)"))
             assertTrue(rowFor(r,true,23) { throw SecurityException() }.versions.contains("未確認"))
             assertEquals("端末OS非対応",rowFor(r.copy(inspected=mapOf(asset.identity() to meta.copy(sdk=ApkSdk(24,35)))),true,23){installed}.status)
         }
