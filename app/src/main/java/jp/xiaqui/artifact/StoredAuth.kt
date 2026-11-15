@@ -30,7 +30,8 @@ internal class StoredAuth(context: Context) : ReleaseAuth {
         return generator.generateKey()
     }
 
-    override fun tokenFor(repository: String): String? = synchronized(lock) {
+    override fun tokenFor(repository: String): String? = readToken(repository, false)
+    internal fun readToken(repository: String, preserve: Boolean): String? = synchronized(lock) {
         val id = alias(repository)
         val record = try { file(id).openRead().use { it.readBytes() } }
         catch (_: java.io.FileNotFoundException) { return@synchronized null }
@@ -43,8 +44,8 @@ internal class StoredAuth(context: Context) : ReleaseAuth {
             cipher.updateAAD(id.toByteArray(Charsets.UTF_8))
             String(cipher.doFinal(record, 12, record.size - 12), Charsets.UTF_8)
         } catch (_: Exception) {
-            forget(repository)
-            throw ImportFailure(REENTER)
+            if (!preserve) forget(repository)
+            throw ImportFailure(if (preserve) "旧認証を復号できないため移行を保留しました。旧データは保持しています。個別PATを再入力して再試行してください。" else REENTER)
         }
     }
 
@@ -74,6 +75,17 @@ internal class StoredAuth(context: Context) : ReleaseAuth {
         }
     }
 
+    internal fun copyVerified(old: String, new: String) = synchronized(lock) {
+        val token = readToken(old, true)
+        val destination = readToken(new, true)
+        if (destination != null && destination != token)
+            throw ImportFailure("変更先に異なる個別認証があります。双方を保持しました。登録編集で認証を確認してください。")
+        if (token != null) {
+            use(new, token)
+            if (readToken(new, true) != token) throw ImportFailure("改名後の認証を検証できません。旧認証を保持しました。再試行してください。")
+        }
+    }
+
     fun clear() = synchronized(lock) {
         try {
             val keys = store()
@@ -85,7 +97,7 @@ internal class StoredAuth(context: Context) : ReleaseAuth {
 
     companion object {
         private const val COMMON = "@common" // Outside the owner/repo namespace.
-        private val lock = Any()
+        private val lock = repoDataLock
         private const val REENTER = "保存した認証を読み出せません。認証なしに戻りました。PATを再入力してください。"
     }
 }
