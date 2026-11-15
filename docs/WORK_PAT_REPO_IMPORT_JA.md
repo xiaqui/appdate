@@ -6,7 +6,17 @@ repo改名後の最新main（PR #7統合済み）へ追従し、旧版の「列�
 
 GitHub IDの照合・新規登録にはmainの `Catalog.registeredIdentity` とID付き `register` を利用し、改名履歴、同名別ID、既存設定、認証、履歴、保存APKを保護する。名前変更を検出しても自動でキーを移動せず、PR #7の登録編集経路へ委ねる。
 
-検証版は0.7.1 / versionCode 11。PR #5/#6、AppDate表示名・APK名変更は含めない。CI・独立レビュー・検収Releaseの結果は完了後に追記する。実機再検収前にマージしない。
+検証版は0.7.1 / versionCode 11。PR #5/#6、AppDate表示名・APK名変更は含めない。実機再検収前にマージしない。
+
+### 完了確認
+
+- PR #4 head: `05383396c29053c56e545358f56ecbf6205839db`。最新main `77a0dd7f841f22b437be903ddd7e62268c76c040` を第2親として取り込み、改名保護を保持した。
+- CI: https://github.com/xiaqui/appdate/actions/runs/43759719343 。単体テスト、lint、固定鍵署名付きassemble、API 23/29計装試験、プロセス終了・再起動後の登録保持、正式0.4.2からの上書き、保存APK領域保持がすべて成功。
+- 独立レビューで、IDなし既存登録への推測ID補完、Release走査中のPAT変更、空ページ+nextの継続、Release API失敗試験不足を修正。テスト不整合2件も修正し、最終再レビューで未解決P0/P1/P2なし。
+- Preview: https://github.com/xiaqui/appdate/releases/tag/store-preview-05383396c290
+- APK: `ReleaseStore-v0.7.1-preview.apk`、2,131,093 bytes、SHA-256 `c905b99bb5cffbc066e4e10e2d9d714495e4c73fdb9c720e2fb9d3a3886a19f4`。sourceは上記head。Releaseから再取得してビルド済みAPKと一致。
+- applicationId `jp.xiaqui.artifact.store.preview`、versionName 0.7.1、versionCode 11、minSdk 23。v1/v2署名、証明書SHA-256 `dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2`。従来の固定鍵と一致。
+- 実PATでの列挙範囲・組織承認と物理端末のUI操作は実機再検収待ち。PR #4は未マージ、auto-merge未設定。
 
 2026-11-14。最新TASK.mdの唯一の対象を実装。基準mainは `cf9163d0f875ad2ec9891341d4ae7251054ce3b6`、branchは `work/pat-repo-auto-import`、PRは [#4](https://github.com/xiaqui/artifact/pull/4)。Phase 1・正式Release・外部Intent作業を再実装していない。
 
