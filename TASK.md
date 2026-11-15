@@ -14,3 +14,6 @@
 ## 前タスクと履歴
 - 共通PATによるrepo自動登録: **PR #4**。仕様: `docs/TASK_PAT_REPO_AUTO_IMPORT_JA.md`。PRの検収・merge判断は別途継続し、このTASK切替で完了扱いにしない。
 - Phase 1、PR #1/#2/#3、正式v0.4.2: 完了済み。以前のTASK本文は `docs/TASK_PHASE1_ARCHIVE_2026-11-14_JA.md` に保存済み。
+
+## 次期独立タスク（未着手）
+- **リポジトリ改名時の登録・履歴・認証の安全な移行**: `docs/TASK_REPO_RENAME_MIGRATION_JA.md`。Workへの実装・検証指示を記録済み。現行のPR #6の実行対象とは別であり、PR #4/#5/#6へ混ぜない。GitHub側の `xiaqui/artifact` → `xiaqui/release-store` 改名は実施せず、端末の登録データを引き継げるようにしてから判断する。
