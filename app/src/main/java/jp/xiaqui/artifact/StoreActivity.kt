@@ -182,6 +182,7 @@ class StoreActivity : Activity() {
             if (release != null) { assets(r, release); return }
             releaseId = null
             page(r.repo)
+            if (catalog.pendingAuth() != null) label("認証移行の完了待ち。登録を編集→保存で再試行してください。旧認証は保持しています。")
             label(if (r.previews) "最新の対象：正式版＋プレリリース" else "最新の対象：正式版のみ")
             label(latestSummary(r))
             button("更新を確認 / 再試行") { refresh(listOf(r)) }
@@ -196,7 +197,7 @@ class StoreActivity : Activity() {
             button("登録を削除") {
                 AlertDialog.Builder(this).setMessage("${r.repo}の登録と取得キャッシュを削除します。保存したAPKは残ります。")
                     .setNegativeButton("戻る", null).setPositiveButton("登録を削除") { _, _ ->
-                        try { vault.forget(r.repo); if (catalog.remove(r.repo)) selected = null }
+                        try { synchronized(repoDataLock) { RepoMigration(this, catalog, vault).finishAuth(); catalog.requireIdle(); vault.forget(r.repo); if (catalog.remove(r.repo)) selected = null } }
                         catch (e: ImportFailure) { notice(e.message.orEmpty()) }
                         render()
                     }.show()
@@ -229,16 +230,28 @@ class StoreActivity : Activity() {
         val fields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(pad,0,pad,0); addView(field); addView(preview)
         }
-        val dialog = AlertDialog.Builder(this).setTitle("リポジトリ登録").setView(fields)
+        val dialog = AlertDialog.Builder(this).setTitle(if (r == null) "リポジトリ登録" else "登録を編集（改名はGitHub IDを確認）").setView(fields)
             .setNegativeButton("戻る", null).setPositiveButton("保存", null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 try {
                     val name = repoName(field.text.toString())
-                    if (r != null && r.repo != name && catalog.get(name) == null) vault.forget(r.repo)
-                    val updated = catalog.register(r?.repo, name, preview.isChecked)
-                    selected = updated.repo; releaseId = null
-                    dialog.dismiss(); render()
+                    val previews = preview.isChecked
+                    if (r != null) {
+                        dialog.dismiss()
+                        work("GitHub ID・認証を確認して登録を保存中…", {
+                            RepoMigration(this, catalog, vault).rename(r, name, previews)
+                        }) { updated ->
+                            selected = updated.repo; releaseId = null; render()
+                            notice(if (r.repo == updated.repo) "設定を保存しました。" else
+                                "現在名：${updated.repo}\nRelease履歴・APK解析・取得日時・状態・個別認証・保存APK参照を保持して移行しました。")
+                        }
+                    } else {
+                        dialog.dismiss()
+                        work("登録を保存中…", { RepoMigration(this, catalog, vault).register(name, previews) }) { updated ->
+                            selected = updated.repo; releaseId = null; render()
+                        }
+                    }
                 } catch (e: ImportFailure) { field.error = e.message }
             }
         }

@@ -75,7 +75,11 @@ internal class StoreService(private val context: Context, val catalog: Catalog,
             if (expected != null && (expected.pkg != info.pkg || expected.code != info.code || expected.signer != info.signer))
                 throw ImportFailure("解析済みAPKと取得したpackageName・versionCode・署名が異なります。Release Assetを確認してください。")
             catalog.update(r) { it.copy(inspected = it.inspected + (a.identity() to info)) }
-            shelf.save(staged, a.name, info, "GitHub Release", r.repo, release.tag, a)
+            synchronized(repoDataLock) {
+                if (catalog.get(r.repo)?.revision != r.revision)
+                    throw ImportFailure("登録が変更されたため保存を中止しました。現在の登録から再試行してください。")
+                shelf.save(staged, a.name, info, "GitHub Release", r.repo, release.tag, a)
+            }
         }
     }
     fun delete(file: File) = shelf.delete(file)

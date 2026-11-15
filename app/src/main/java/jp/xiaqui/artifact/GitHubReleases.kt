@@ -100,6 +100,11 @@ internal class GitHubReleases(private val auth: ReleaseAuth,
         }
     }
 
+    fun confirmRelease(link: ReleaseLink, id: Long) {
+        val row = JSONObject(json(link, "${link.apiBase}/$id"))
+        if (row.getLong("id") != id) throw ImportFailure("旧Release履歴との同一性を確認できません。移行を保留しました。")
+    }
+
     fun releases(link: ReleaseLink): List<ReleaseItem> = buildList {
         releaseRows(link) { add(ReleaseItem(it.getLong("id"), it.getString("tag_name"))) }
     }
