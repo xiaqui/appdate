@@ -14,6 +14,8 @@ internal class RepoMigration(context: Context,
         val lookup: (String, Long, String) -> RepoIdentity = { name, id, credentials -> api.resolve(name, id, credentials) }
         lookup
     }, private val proveHistory: (Registration, String) -> Unit = { r, name ->
+        if (r.githubId == 0L && r.history.isEmpty() && SavedShelf(context).hasOrigin(r.repo))
+            throw ImportFailure("旧IDとRelease履歴が未記録の保存APKがあります。出所の同一性を証明できないため移行を保留しました。旧登録で更新確認を成功させてから再試行してください。")
         if (r.githubId == 0L && (r.history.isNotEmpty() || r.inspected.isNotEmpty())) {
             val anchor = r.history.firstOrNull()?.id
                 ?: throw ImportFailure("旧GitHub IDと履歴の同一性を証明できません。旧登録を保持しました。")
@@ -27,7 +29,7 @@ internal class RepoMigration(context: Context,
     }) {
     fun register(raw: String, previews: Boolean): Registration {
         val name = repoName(raw)
-        if (catalog.rememberedId(name) == 0 && catalog.canonical(name) == name)
+        if (catalog.rememberedId(name) == 0L && catalog.canonical(name) == name)
             return catalog.register(null, name, previews)
         val current = resolve(name, 0, name)
         synchronized(repoDataLock) {

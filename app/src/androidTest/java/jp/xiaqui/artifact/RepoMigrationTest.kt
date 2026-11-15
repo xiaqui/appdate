@@ -92,6 +92,16 @@ class RepoMigrationTest {
         try { m.rename(r,new,true); fail() } catch (_: ImportFailure) {}
         assertEquals(r,c.get(old)); assertNull(c.get(new)); reset()
     }
+    @Test fun emptyCatalogWithSavedOriginCannotSkipLegacyProof() {
+        reset(); val c=Catalog(context); val r=c.register(null,old,true)
+        val ledger=context.getSharedPreferences("saved-release-v1",Context.MODE_PRIVATE)
+        ledger.edit().putString("proof-fixture.apk","""{"repo":"$old"}""").commit()
+        try {
+            val m=RepoMigration(context,c,StoredAuth(context), resolve = { _, _, _ -> RepoIdentity(42,new) })
+            try { m.rename(r,new,true); fail() } catch (_: ImportFailure) {}
+            assertEquals(r,c.get(old)); assertNull(c.get(new))
+        } finally { ledger.edit().remove("proof-fixture.apk").commit(); reset() }
+    }
     @Test fun authConflictPreservesBothAndOfflineDoesNotMutate() {
         reset(); val c=Catalog(context); val r=populated(c); val v=StoredAuth(context)
         v.use(old,"oldFixture"); v.use(new,"otherFixture")

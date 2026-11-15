@@ -63,6 +63,17 @@ class RepoIdentityTest {
         assertThrows(ImportFailure::class.java) { verifiedRename(old.copy(githubId=43),id,id) }
         assertEquals("new/repo",verifiedRename(old.copy(githubId=0),id,id))
     }
+    @Test fun legacyReleaseProofRequiresTheCachedIdAtTheDestination() {
+        val link = ReleaseLink("new/repo",null,null,true)
+        GitHubReleases(auth) { url ->
+            assertEquals("/repos/new/repo/releases/42",url.path)
+            response(url,200,"""{"id":42}""")
+        }.confirmRelease(link,42)
+        for (case in listOf(200 to """{"id":43}""",404 to "")) {
+            val api = GitHubReleases(auth) { url -> response(url,case.first,case.second) }
+            assertThrows(ImportFailure::class.java) { api.confirmRelease(link,42) }
+        }
+    }
     @Test fun idCodecIsBackwardsCompatible() {
         val r = Registration("a/b",true,"r",githubId=42)
         assertEquals(r,CatalogCodec.decode(CatalogCodec.encode(r)))

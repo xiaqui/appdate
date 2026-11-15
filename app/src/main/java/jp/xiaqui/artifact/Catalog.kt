@@ -91,7 +91,7 @@ internal class Catalog(context: Context) {
     fun rememberedId(repo: String): Long = JSONObject(prefs.getString("@identities", "{}")!!).optLong(repo, 0)
     fun validateMigration(r: Registration, name: String, id: Long) = synchronized(lock) {
         requireIdle()
-        if (get(r.repo)?.revision != r.revision) throw ImportFailure("確認中に登録が変わりました。編集を開き直してください。")
+        if (get(r.repo) != r) throw ImportFailure("確認中に登録が変わりました。編集を開き直してください。")
         if (name != r.repo && get(name) != null) throw ImportFailure("変更先は登録済みです。双方を保持しました。重複登録を解決して再試行してください。")
         if (listOf(r.repo, name).any { rememberedId(it) > 0 && rememberedId(it) != id })
             throw ImportFailure("以前の改名履歴とGitHub IDが異なります。名前が再利用された可能性があります。双方を保持して移行を保留します。")

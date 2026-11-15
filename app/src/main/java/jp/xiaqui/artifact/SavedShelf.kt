@@ -16,6 +16,12 @@ internal class SavedShelf(context: Context) {
     }
     private fun record(file: File) = runCatching { ledger.getString(file.name, null)?.let(::JSONObject) }.getOrNull()
 
+    fun hasOrigin(repo: String): Boolean = synchronized(lock) {
+        ledger.all.values.any { value ->
+            runCatching { catalog.canonical(JSONObject(value as String).optString("repo")) == repo }.getOrDefault(false)
+        }
+    }
+
     private fun candidates(repo: String, asset: ReleaseApk) = dir.listFiles().orEmpty().filter { file ->
         val r = record(file)
         val key = r?.optString("asset")
