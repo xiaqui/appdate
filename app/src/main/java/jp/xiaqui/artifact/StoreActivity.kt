@@ -230,6 +230,23 @@ class StoreActivity : Activity() {
         val fields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(pad,0,pad,0); addView(field); addView(preview)
         }
+        if (r != null) fields.addView(Button(this).apply {
+            text = "中断復旧：未登録の変更先PATを解除"
+            setOnClickListener {
+                try {
+                    val name = repoName(field.text.toString())
+                    AlertDialog.Builder(this@StoreActivity)
+                        .setMessage("変更先「$name」に中断時の個別PATが残った場合のみ解除します。旧登録「${r.repo}」の認証・履歴・APKは保持します。解除後に保存を再試行してください。")
+                        .setNegativeButton("戻る", null)
+                        .setPositiveButton("変更先PATを解除") { _, _ ->
+                            try {
+                                RepoMigration(this@StoreActivity, catalog, vault).clearUnregisteredDestination(r.repo, name)
+                                notice("変更先PATを解除しました。保存を再試行してください。")
+                            } catch (e: ImportFailure) { notice(e.message.orEmpty()) }
+                        }.show()
+                } catch (e: ImportFailure) { field.error = e.message }
+            }
+        })
         val dialog = AlertDialog.Builder(this).setTitle(if (r == null) "リポジトリ登録" else "登録を編集（改名はGitHub IDを確認）").setView(fields)
             .setNegativeButton("戻る", null).setPositiveButton("保存", null).create()
         dialog.setOnShowListener {

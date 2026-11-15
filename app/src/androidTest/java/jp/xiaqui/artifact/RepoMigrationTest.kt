@@ -77,6 +77,37 @@ class RepoMigrationTest {
         RepoMigration(context).finishAuth()
         assertNull(c.pendingAuth()); assertNull(v.tokenFor(old)); assertEquals("fixture",v.tokenFor(new)); reset()
     }
+    @Test fun lostOldKeyAfterCommitCanFinishWithVerifiedDestination() {
+        reset(); val c=Catalog(context); val r=populated(c); val v=StoredAuth(context)
+        v.use(old,"fixture"); v.copyVerified(old,new); c.migrate(r,new,42,false)
+        KeyStore.getInstance("AndroidKeyStore").apply { load(null); deleteEntry(v.alias(old)) }
+        RepoMigration(context).finishAuth()
+        assertNull(c.pendingAuth()); assertEquals("fixture",v.readToken(new,true))
+        assertNull(v.readToken(old,true)); assertNotNull(c.register(null,"another/repo",true)); reset()
+    }
+    @Test fun unreadableBothKeysRetainPendingUntilCurrentAuthIsReentered() {
+        reset(); val c=Catalog(context); val r=populated(c); val v=StoredAuth(context)
+        v.use(old,"fixture"); v.copyVerified(old,new); c.migrate(r,new,42,false)
+        KeyStore.getInstance("AndroidKeyStore").apply { load(null); deleteEntry(v.alias(old)); deleteEntry(v.alias(new)) }
+        try { RepoMigration(context).finishAuth(); fail() } catch (_: ImportFailure) {}
+        assertNotNull(c.pendingAuth())
+        v.use(new,"replacement"); RepoMigration(context).finishAuth()
+        assertNull(c.pendingAuth()); assertEquals("replacement",v.readToken(new,true)); reset()
+    }
+    @Test fun orphanCopyConflictHasExplicitNonDestructiveRecovery() {
+        reset(); val c=Catalog(context); val r=populated(c); val v=StoredAuth(context)
+        v.use(old,"first"); v.copyVerified(old,new); v.use(old,"replacement")
+        try { migration(c).rename(r,new,false); fail() } catch (_: ImportFailure) {}
+        val m=migration(c)
+        try { m.clearUnregisteredDestination(old,old); fail() } catch (_: ImportFailure) {}
+        c.register(null,new,true)
+        try { m.clearUnregisteredDestination(old,new); fail() } catch (_: ImportFailure) {}
+        assertEquals("first",v.readToken(new,true)); c.remove(new)
+        m.clearUnregisteredDestination(old,new)
+        assertEquals(r,c.get(old)); assertEquals("replacement",v.readToken(old,true))
+        m.rename(r,new,false)
+        assertEquals("replacement",v.readToken(new,true)); assertNull(c.pendingAuth()); reset()
+    }
     @Test fun reusedNameCannotReassignOldSavedOrigins() {
         reset(); val c = Catalog(context); val r = populated(c)
         migration(c).rename(r,new,false)

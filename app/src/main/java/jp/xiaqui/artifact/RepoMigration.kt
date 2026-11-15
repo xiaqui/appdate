@@ -39,8 +39,13 @@ internal class RepoMigration(context: Context,
     }
     fun finishAuth() = synchronized(repoDataLock) {
         catalog.pendingAuth()?.let { (old, new) ->
-            val prior = vault.readToken(old, true)
             var next = try { vault.readToken(new, true) } catch (_: ImportFailure) { null }
+            val prior = try { vault.readToken(old, true) } catch (_: ImportFailure) {
+                // The destination was verified before the atomic catalog switch. If the
+                // old key is now lost, a readable destination is sufficient to finish.
+                if (next == null) throw ImportFailure("新旧の個別認証を復号できません。現在名の個別PATを再入力し、登録編集→保存で完了してください。旧データは保持しています。")
+                null
+            }
             if (prior != null && next == null) {
                 vault.use(new, prior)
                 next = vault.readToken(new, true)
@@ -50,6 +55,15 @@ internal class RepoMigration(context: Context,
             vault.forget(old)
             catalog.authCleaned()
         }
+    }
+
+    /** Explicit user recovery for an orphan copy made before the catalog switch. */
+    fun clearUnregisteredDestination(old: String, raw: String) = synchronized(repoDataLock) {
+        val name = repoName(raw)
+        catalog.requireIdle()
+        if (name == old || catalog.get(old) == null || catalog.get(name) != null || catalog.canonical(name) != name)
+            throw ImportFailure("旧登録・登録済みの変更先・移行済みの名前の認証はここでは解除できません。")
+        vault.forget(name)
     }
 
     fun rename(r: Registration, raw: String, previews: Boolean): Registration {
