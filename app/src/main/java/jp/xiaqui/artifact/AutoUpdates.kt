@@ -129,7 +129,7 @@ internal object AutoUpdates {
             for(repo in repos) {
                 if(Thread.currentThread().isInterrupted || !enabled(settings,trigger)) throw InterruptedException()
                 val initial=catalog.get(repo) ?: continue
-                if(!manual) service.refresh(initial)
+                if(!manual) service.refresh(initial, inspectApks = false)
                 val r=catalog.get(repo) ?: continue
                 var outcome="メタデータ確認済み"
                 if(r.error.isNotEmpty()) { failures++; outcome=r.error }

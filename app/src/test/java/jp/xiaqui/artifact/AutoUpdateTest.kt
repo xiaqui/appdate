@@ -21,6 +21,13 @@ class AutoUpdateTest {
         assertNull(retentionPlan(huge,"pkg",100){installed})
         assertEquals(emptyList<String>(),retentionPlan(listOf(row(2)),"pkg",100){installed})
     }
+    @Test fun perPackageLimitNeverDeletesAnUnrelatedOlderApk() {
+        val other=row(1).copy(name="other-old.apk",pkg="other",time=0)
+        val rows=listOf(other,row(1),row(2),row(3))
+        assertEquals(listOf("pkg~1.apk"),retentionPlan(rows,"pkg",100){ requested ->
+            if (requested=="other") installed.copy(pkg="other") else installed
+        })
+    }
     @Test fun wifiConsentAndThrottleAreExplicit() {
         assertFalse(downloadAllowed(NetworkState(true,false),true,false))
         assertTrue(downloadAllowed(NetworkState(true,false),true,true))

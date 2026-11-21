@@ -36,14 +36,27 @@ internal class StoreService(private val context: Context, val catalog: Catalog,
         } finally { staged.delete() }
     }
 
-    fun refresh(r: Registration) {
+    fun refresh(r: Registration, inspectApks: Boolean = true) {
         try {
             val history = api.history(r.link)
+            val known = r.inspected.toMutableMap()
+            val latest = history.firstOrNull { r.previews || !it.preview }
+            val errors = mutableListOf<String>()
+            if (inspectApks) for (a in latest?.assets.orEmpty().filter { it.identity() !in known }.take(4)) {
+                try { known[a.identity()] = fetch(r, a) { _, meta -> meta } }
+                catch (e: Exception) {
+                    if (e is InterruptedException) throw e
+                    errors += "${a.name}: ${storeError(e)}"
+                }
+            }
             if (Thread.currentThread().isInterrupted) throw InterruptedException()
             val now = System.currentTimeMillis()
-            val retained = history.flatMap { it.assets }.map { it.identity() }.toSet()
-            catalog.update(r) { it.copy(history=history, checked=now, fetched=now, error="",
-                inspected=it.inspected.filterKeys(retained::contains)) }
+            catalog.update(r) {
+                val snapshot = if (errors.isEmpty() || it.fetched == 0L) history else it.history
+                val retained = snapshot.flatMap { release -> release.assets }.map { asset -> asset.identity() }.toSet()
+                it.copy(history = snapshot, checked = now, fetched = if (errors.isEmpty()) now else it.fetched,
+                    error = errors.joinToString("\n"), inspected = (it.inspected + known).filterKeys(retained::contains))
+            }
         } catch (e: Exception) {
             if (e is InterruptedException) throw e
             catalog.update(r) { it.copy(error = storeError(e), checked = System.currentTimeMillis()) }

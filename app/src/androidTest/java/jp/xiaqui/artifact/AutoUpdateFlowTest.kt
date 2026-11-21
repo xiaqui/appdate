@@ -41,7 +41,7 @@ class AutoUpdateFlowTest {
         var saved: File?=null
         try {
             val r=cat.register(null,repo,true)
-            service.refresh(r); assertEquals(0,downloads)
+            service.refresh(r, inspectApks = false); assertEquals(0,downloads)
             assertEquals("取得成功",service.prepareUpdate(cat.get(repo)!!){})
             assertEquals(1,downloads)
             saved=SavedShelf(context).verified(repo,asset)

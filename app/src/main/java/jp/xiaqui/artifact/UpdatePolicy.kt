@@ -19,13 +19,16 @@ internal fun retentionPlan(rows: List<RetainedApk>, pkg: String, bytes: Long,
         val local=locals[r.pkg]
         r.automatic && !r.pending && r.valid && r.name !in recovery && local != null &&
             r.signer.isNotBlank() && r.signer==local.signer && r.code <= local.code
-    }.sortedBy { it.time }
+    }.toMutableList()
     val left=rows.toMutableList(); val deleted=mutableListOf<String>()
-    for (candidate in candidates) {
+    while (!fits(left)) {
+        val packageLimitViolated = left.count { it.pkg == pkg } >= 3
+        val candidate = candidates.filter { !packageLimitViolated || it.pkg == pkg }.minByOrNull { it.time }
+            ?: return null
+        candidates.remove(candidate)
         left.remove(candidate); deleted+=candidate.name
-        if (fits(left)) return deleted
     }
-    return null
+    return deleted
 }
 
 internal fun updateEligible(info: ApkInfo, local: ApkInfo?, api: Int) =
