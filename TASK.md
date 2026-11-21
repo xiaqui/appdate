@@ -1,6 +1,10 @@
 # TASK — AppDate 統合の次工程
 
-## 現在のWork実行対象（唯一）：PR #4の自動登録フィルタ
+## 現在のWork実行対象（唯一）：未指定
+
+PR #4は2026-11-21の社長実機再検収に合格し、mainへマージ済み。再実装しない。次のWork対象は、社長の指示に基づいて本節を明示的に差し替えてから開始する。
+
+## 完了済み：PR #4の自動登録フィルタ
 
 **既存PR #4（`work/pat-repo-auto-import`）** に、`docs/TASK_PAT_REPO_AUTO_IMPORT_JA.md` の2026-11-16改訂仕様を実装する。最新の `xiaqui/rin` README/STYLE、当repoのAGENTS.md、最新main、PR #4の最新headと差分を確認する。新規PRを乱立させず**PR #4を更新**すること。
 
