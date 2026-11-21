@@ -32,6 +32,11 @@ class AutoUpdateTest {
         val longPackage="jp.xiaqui."+"a".repeat(120)
         assertEquals(longPackage,retainedPackage("${longPackage.take(90)}~1.apk",longPackage))
         assertEquals("legacy.pkg",retainedPackage("legacy.pkg~1.apk",""))
+        val collidingPackage=longPackage.dropLast(1)+"b"
+        val rows=listOf(row(1).copy(pkg=longPackage),row(2).copy(pkg=longPackage),row(3).copy(pkg=longPackage),
+            row(1).copy(name="collision.apk",pkg=collidingPackage))
+        assertTrue(storageFits(rows,collidingPackage,100))
+        assertFalse(storageFits(rows,longPackage,100))
     }
     @Test fun cellularConsentIsBoundToTheApprovedRepoAndAssetSnapshot() {
         val first=ReleaseApk(1,"one.apk",10,null)

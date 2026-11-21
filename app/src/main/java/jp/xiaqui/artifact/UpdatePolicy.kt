@@ -8,10 +8,13 @@ internal data class RetainedApk(val name: String, val pkg: String, val code: Lon
 internal fun retainedPackage(fileName: String, recordedPackage: String) =
     recordedPackage.ifBlank { fileName.substringBefore('~',"") }
 
+internal fun storageFits(rows: List<RetainedApk>, pkg: String, bytes: Long) =
+    rows.size < 24 && rows.sumOf { it.bytes } + bytes <= 512L*1024*1024 && rows.count { it.pkg == pkg } < 3
+
 /** Null means no safe plan. Always keep one compatible rollback file per installed package. */
 internal fun retentionPlan(rows: List<RetainedApk>, pkg: String, bytes: Long,
     installed: (String) -> ApkInfo?): List<String>? {
-    fun fits(left: List<RetainedApk>) = left.size < 24 && left.sumOf { it.bytes } + bytes <= 512L*1024*1024 && left.count { it.pkg == pkg } < 3
+    fun fits(left: List<RetainedApk>) = storageFits(left,pkg,bytes)
     if (fits(rows)) return emptyList()
     val locals=rows.map { it.pkg }.distinct().associateWith { runCatching { installed(it) }.getOrNull() }
     val recovery=rows.filter { r ->

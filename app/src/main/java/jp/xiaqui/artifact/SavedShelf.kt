@@ -48,8 +48,8 @@ internal class SavedShelf(private val context: Context) {
         tag: String? = null, asset: ReleaseApk? = null, automatic: Boolean = false): File = synchronized(lock) {
         val sha = hash(staged)
         if (repo != null && asset != null) verified(repo,asset,sha)?.let { if (!automatic) pin(it); return@synchronized it }
-        if (automatic) makeRoom(info.pkg, staged.length())
-        val file = ApkStore(dir).save(staged, name, info.pkg)
+        makeRoom(info.pkg, staged.length(), automatic)
+        val file = ApkStore(dir).save(staged, name, info.pkg, enforceFilenamePackageLimit=false)
         val r = JSONObject().put("source",source).put("repo",repo).put("tag",tag).put("asset",asset?.identity())
             .put("name",name).put("package",info.pkg).put("versionCode",info.code).put("versionName",info.version)
             .put("label",info.label).put("automatic",automatic).put("pending",automatic)
@@ -78,13 +78,18 @@ internal class SavedShelf(private val context: Context) {
             if (!ledger.edit().putString(file.name,r.toString()).commit()) throw ImportFailure("APKの保護設定を保存できません。")
         }
     }
-    private fun makeRoom(pkg: String, bytes: Long) {
+    private fun makeRoom(pkg: String, bytes: Long, allowAutomaticCleanup: Boolean) {
         val rows=dir.listFiles().orEmpty().filter { it.isFile }.map { f ->
             val r=record(f)
             val signer=r?.optString("signer").orEmpty()
             val valid=r != null && r.optString("sha256").length==64 && runCatching { hash(f)==r.optString("sha256") }.getOrDefault(false)
             RetainedApk(f.name,retainedPackage(f.name,r?.optString("package").orEmpty()),r?.optLong("versionCode") ?: 0,signer,
                 f.length(),r?.optLong("savedAt") ?: 0,r?.optBoolean("automatic") == true,r?.optBoolean("pending") == true || f.name in active,valid)
+        }
+        if (!allowAutomaticCleanup) {
+            if (!storageFits(rows,pkg,bytes))
+                throw ImportFailure("保存上限です。「保存したAPK」で不要な世代を削除して再試行してください。")
+            return
         }
         val plan=retentionPlan(rows,pkg,bytes) { Installation.installed(context,it) }
             ?: throw UpdateDeferred("保存上限のため保留。手動保存・インストール待ち・唯一の復旧APKは自動削除しません。「保存したAPK」で整理してください。")
