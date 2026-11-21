@@ -29,6 +29,11 @@ class AutoUpdateTest {
         assertFalse(startupDue(1000,1001)); assertTrue(startupDue(1000,1000+15*60*1000))
         assertTrue(startupDue(0,1000)); assertTrue(startupDue(1000,1))
     }
+    @Test fun independentSwitchMigrationPreservesExplicitLegacyOffs() {
+        assertEquals(AutoPreferences(true,false,true),migrateAutoPreferences(paused=false,download=true))
+        assertEquals(AutoPreferences(true,false,false),migrateAutoPreferences(paused=false,download=false))
+        assertEquals(AutoPreferences(false,false,false),migrateAutoPreferences(paused=true,download=true))
+    }
     @Test fun renamedLabelsRemainSamePackageButNewPackageNeverUpdates() {
         val changed=installed.copy(label="New Label",code=3)
         assertTrue(updateEligible(changed,installed,23))

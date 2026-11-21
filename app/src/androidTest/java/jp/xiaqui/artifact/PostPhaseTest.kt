@@ -1,10 +1,13 @@
 package jp.xiaqui.artifact
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.EditText
 import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -87,8 +90,28 @@ class PostPhaseTest {
         } finally { old.delete(); prefs.edit().remove(missing).commit() }
     }
 
+    @Test fun storeScreensStayCapturableWhileSensitiveDialogsAreSecure() {
+        val activity = inst.startActivitySync(Intent(context, StoreActivity::class.java)
+            .putExtra("settings", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        try {
+            inst.waitForIdleSync()
+            inst.runOnMainSync {
+                assertEquals(0, activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE)
+                val dialog = AlertDialog.Builder(activity).setView(EditText(activity)).create()
+                protectSensitiveDialog(dialog)
+                assertTrue(dialog.window!!.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
+                dialog.show()
+                protectSensitiveDialog(dialog)
+                assertTrue(dialog.window!!.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
+                assertEquals(0, activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE)
+                dialog.dismiss()
+                assertEquals(0, activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        } finally { inst.runOnMainSync { activity.finish() } }
+    }
+
     @Test fun sevenRowsAndDetails() {
-        AutoSettings(context).paused=true
+        AutoSettings(context).apply { startupEnabled=false; periodicEnabled=false }
         val cat = Catalog(context)
         val regs = (1..7).map { n ->
             val repo = "ui/app$n"
@@ -135,4 +158,3 @@ class PostPhaseTest {
     private fun all(view: View): List<View> = listOf(view) + if (view is ViewGroup)
         (0 until view.childCount).flatMap { all(view.getChildAt(it)) } else emptyList()
 }
-

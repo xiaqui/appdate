@@ -69,4 +69,3 @@ class StoreFlowTest {
         } finally { saved?.let(service::delete); catalog.remove(repo) }
     }
 }
-

@@ -6,6 +6,7 @@ import java.io.File
 
 /** Keep original filenames and v1 ledger keys; legacy files need no destructive migration. */
 internal class SavedShelf(private val context: Context) {
+    private val catalog = Catalog(context)
     val dir = File(context.filesDir, "apks")
     private val ledger = context.getSharedPreferences("saved-release-v1", Context.MODE_PRIVATE)
     fun entries(): List<File> = synchronized(lock) {
@@ -15,11 +16,17 @@ internal class SavedShelf(private val context: Context) {
     }
     private fun record(file: File) = runCatching { ledger.getString(file.name, null)?.let(::JSONObject) }.getOrNull()
 
+    fun hasOrigin(repo: String): Boolean = synchronized(lock) {
+        ledger.all.values.any { value ->
+            runCatching { catalog.canonical(JSONObject(value as String).optString("repo")) == repo }.getOrDefault(false)
+        }
+    }
+
     private fun candidates(repo: String, asset: ReleaseApk) = dir.listFiles().orEmpty().filter { file ->
         val r = record(file)
         val key = r?.optString("asset")
         val oldKey = "${asset.id}:${asset.size}:${asset.digest.orEmpty()}"
-        file.isFile && r?.optString("repo") == repo && (key == asset.identity() || key == oldKey)
+        file.isFile && r != null && catalog.canonical(r.optString("repo")) == repo && (key == asset.identity() || key == oldKey)
     }
 
     fun candidate(repo: String, asset: ReleaseApk) = candidates(repo, asset).firstOrNull()
@@ -112,7 +119,7 @@ internal class SavedShelf(private val context: Context) {
         return buildString {
             appendLine(r?.optString("name")?.ifEmpty { null } ?: file.name)
             append(origin)
-            if (r?.has("repo") == true) append(" · " + r.optString("repo") + " " + r.optString("tag"))
+            if (r?.has("repo") == true) append(" · " + catalog.canonical(r.optString("repo")) + " " + r.optString("tag"))
             append("\n保存 " + StoreTime.local(r?.optLong("savedAt",file.lastModified()) ?: file.lastModified()))
             if (r?.has("package") == true) append("\n" + r.optString("package") + " " + r.optString("versionName") + " (" + r.optLong("versionCode") + ")")
             if (r?.optBoolean("automatic") == true) append("\n自動取得" + if (r.optBoolean("pending")) "・インストール待ち（保護）" else "・安全な旧世代のみ整理対象")
@@ -124,6 +131,5 @@ internal class SavedShelf(private val context: Context) {
         if (!file.delete()) throw ImportFailure("ファイルを削除できません。履歴を保持します。")
         ledger.edit().remove(file.name).apply()
     }
-    companion object { private val lock = Any(); private val active=mutableMapOf<String,Int>() }
+    companion object { private val lock = repoDataLock; private val active=mutableMapOf<String,Int>() }
 }
-

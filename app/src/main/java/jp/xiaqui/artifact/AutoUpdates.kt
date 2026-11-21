@@ -14,21 +14,42 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 internal class AutoSettings(context: Context) {
     val prefs=context.getSharedPreferences("automatic-updates-v1",Context.MODE_PRIVATE)
-    var paused: Boolean
-        get()=prefs.getBoolean("paused",false)
-        set(value) { prefs.edit().putBoolean("paused",value).commit() }
-    var download: Boolean
-        get()=prefs.getBoolean("download",true)
-        set(value) { prefs.edit().putBoolean("download",value).commit() }
-    var wifiOnly: Boolean
-        get()=prefs.getBoolean("wifiOnly",true)
-        set(value) { prefs.edit().putBoolean("wifiOnly",value).commit() }
+    init {
+        if (!prefs.getBoolean("independent-switches-v2", false)) {
+            val migrated = migrateAutoPreferences(
+                prefs.getBoolean("paused", false),
+                prefs.getBoolean("download", true)
+            )
+            prefs.edit()
+                .putBoolean("startup", migrated.startup)
+                .putBoolean("periodic", migrated.periodic)
+                .putBoolean("download-v2", migrated.download)
+                .putBoolean("wifiOnly", true)
+                .putBoolean("independent-switches-v2", true)
+                .commit()
+        }
+    }
+    var startupEnabled: Boolean
+        get()=prefs.getBoolean("startup",true)
+        set(value) { prefs.edit().putBoolean("startup",value).commit() }
+    var periodicEnabled: Boolean
+        get()=prefs.getBoolean("periodic",false)
+        set(value) { prefs.edit().putBoolean("periodic",value).commit() }
+    var downloadEnabled: Boolean
+        get()=prefs.getBoolean("download-v2",true)
+        set(value) { prefs.edit().putBoolean("download-v2",value).commit() }
     fun state(): String {
         val summary=prefs.getString("summary","自動確認は未実行").orEmpty()
         val status=if (AutoUpdates.running.get()) "確認中・キャッシュを表示" else "最終処理"
         return "$status · $summary\n最終確認 ${StoreTime.local(prefs.getLong("attempt",0))} / 最終成功 ${StoreTime.local(prefs.getLong("success",0))}"
     }
 }
+
+internal data class AutoPreferences(val startup: Boolean, val periodic: Boolean, val download: Boolean)
+internal fun migrateAutoPreferences(paused: Boolean, download: Boolean) =
+    if (paused) AutoPreferences(false, false, false) else AutoPreferences(true, false, download)
+
+internal enum class AutoTrigger { STARTUP, PERIODIC, MANUAL }
 
 internal data class NetworkState(val connected: Boolean, val wifi: Boolean)
 internal fun networkState(context: Context): NetworkState {
@@ -51,7 +72,7 @@ internal object AutoUpdates {
     fun schedule(context: Context) {
         val manager=context.getSystemService(JobScheduler::class.java)
         val settings=AutoSettings(context)
-        if(settings.paused) { manager.cancel(JOB); return }
+        if(!settings.periodicEnabled) { manager.cancel(JOB); return }
         if(manager.allPendingJobs.any { it.id==JOB }) return
         manager.schedule(JobInfo.Builder(JOB,ComponentName(context,UpdateJobService::class.java))
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPeriodic(6*60*60*1000L).setPersisted(true)
@@ -63,7 +84,8 @@ internal object AutoUpdates {
         executor.submit {
             runCatching { reconcile(app) }
             val settings=AutoSettings(app)
-            if (!settings.paused && startupDue(settings.prefs.getLong("attempt",0),System.currentTimeMillis())) run(app)
+            if (settings.startupEnabled && startupDue(settings.prefs.getLong("attempt",0),System.currentTimeMillis()))
+                run(app, AutoTrigger.STARTUP)
         }
     }
     fun reconcileAsync(context: Context) { val app=context.applicationContext; executor.submit { runCatching { reconcile(app) } } }
@@ -74,7 +96,7 @@ internal object AutoUpdates {
             JobInfo.Builder(42044,ComponentName(context,UpdateJobService::class.java)).setOverrideDeadline(0).build())
     }
     fun submit(context: Context, finished: () -> Unit): Future<*> = executor.submit {
-        try { run(context.applicationContext) } finally { finished() }
+        try { run(context.applicationContext, AutoTrigger.PERIODIC) } finally { finished() }
     }
     fun manualCandidates(context: Context): List<Registration> {
         val catalog=Catalog(context)
@@ -86,31 +108,37 @@ internal object AutoUpdates {
         }
     }
     fun manual(context: Context, override: Boolean, done: () -> Unit) = executor.submit {
-        try { run(context.applicationContext,manual=true,override=override) } finally { done() }
+        try { run(context.applicationContext, AutoTrigger.MANUAL, override) } finally { done() }
     }
-    fun run(context: Context, manual: Boolean=false, override: Boolean=false) {
+    private fun enabled(settings: AutoSettings, trigger: AutoTrigger) = when (trigger) {
+        AutoTrigger.STARTUP -> settings.startupEnabled
+        AutoTrigger.PERIODIC -> settings.periodicEnabled
+        AutoTrigger.MANUAL -> true
+    }
+    fun run(context: Context, trigger: AutoTrigger, override: Boolean=false) {
         if (!running.compareAndSet(false,true)) return
         val settings=AutoSettings(context)
+        val manual=trigger==AutoTrigger.MANUAL
         val prefs=settings.prefs
         var success=0; var failures=0; var held=0; var inspected=0
         try {
-            if (!manual && settings.paused) return
+            if (!enabled(settings,trigger)) return
             prefs.edit().putLong("attempt",System.currentTimeMillis()).putString("summary","前回処理は未完了・再試行可能").commit()
             val catalog=Catalog(context); val service=StoreService(context,catalog)
             val repos=if (manual) manualCandidates(context).map { it.repo } else catalog.names()
             for(repo in repos) {
-                if(Thread.currentThread().isInterrupted || !manual && settings.paused) throw InterruptedException()
+                if(Thread.currentThread().isInterrupted || !enabled(settings,trigger)) throw InterruptedException()
                 val initial=catalog.get(repo) ?: continue
                 if(!manual) service.refresh(initial)
                 val r=catalog.get(repo) ?: continue
                 var outcome="メタデータ確認済み"
                 if(r.error.isNotEmpty()) { failures++; outcome=r.error }
-                else if (manual || settings.download) {
+                else if (manual || settings.downloadEnabled) {
                     try {
                         outcome=service.prepareUpdate(r) {
-                            if (Thread.currentThread().isInterrupted || !manual && settings.paused) throw InterruptedException()
-                            if (!manual && !settings.download) throw UpdateDeferred("自動取得を停止しました。")
-                            if(!downloadAllowed(networkState(context),settings.wifiOnly,override))
+                            if (Thread.currentThread().isInterrupted || !enabled(settings,trigger)) throw InterruptedException()
+                            if (!manual && !settings.downloadEnabled) throw UpdateDeferred("自動取得を停止しました。")
+                            if(!downloadAllowed(networkState(context),true,override))
                                 throw UpdateDeferred("Wi-Fi待ち・通信切断のため取得を保留しました。")
                         }
                         when {

@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <queries><intent><action android:name="android.intent.action.INSTALL_PACKAGE"/><data android:scheme="content" android:mimeType="application/vnd.android.package-archive"/></intent></queries>
-    <application android:label="AppDate" android:theme="@android:style/Theme.Material.Light" android:allowBackup="false" android:usesCleartextTraffic="false">
+    <application android:label="Release Store" android:theme="@android:style/Theme.Material.Light" android:allowBackup="false" android:usesCleartextTraffic="false">
         <service android:name=".UpdateJobService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true"/>
         <receiver android:name=".UpdateEvents" android:exported="false">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/></intent-filter>
@@ -64,4 +64,3 @@
         </activity>
     </application>
 </manifest>
-

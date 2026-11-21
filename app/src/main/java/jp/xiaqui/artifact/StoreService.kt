@@ -12,7 +12,6 @@ internal fun storeError(e: Exception) = when {
     e is java.io.IOException -> "通信・ファイル読取に失敗しました。再試行してください。"
     else -> "APKまたはRelease情報を読み取れません。"
 }
-
 internal class StoreService(private val context: Context, val catalog: Catalog,
     private val api: GitHubReleases = GitHubReleases(StoredAuth(context)),
     private val installed: (String) -> ApkInfo? = { Installation.installed(context,it) }) {
@@ -64,7 +63,11 @@ internal class StoreService(private val context: Context, val catalog: Catalog,
             if (expected != null && (expected.pkg != info.pkg || expected.code != info.code || expected.signer != info.signer))
                 throw ImportFailure("解析済みAPKと取得したpackageName・versionCode・署名が異なります。Release Assetを確認してください。")
             catalog.update(r) { it.copy(inspected = it.inspected + (a.identity() to info)) }
-            shelf.save(staged, a.name, info, "GitHub Release", r.repo, release.tag, a)
+            synchronized(repoDataLock) {
+                if (catalog.get(r.repo)?.revision != r.revision)
+                    throw ImportFailure("登録が変更されたため保存を中止しました。現在の登録から再試行してください。")
+                shelf.save(staged, a.name, info, "GitHub Release", r.repo, release.tag, a)
+            }
         }
     }
     fun prepareUpdate(r: Registration, allowed: () -> Unit): String = synchronized(transferLock) {
@@ -104,4 +107,3 @@ internal class StoreService(private val context: Context, val catalog: Catalog,
     fun delete(file: File) = shelf.delete(file)
     companion object { private val transferLock = Any(); private val tempLock = Any(); private var cleaned = false }
 }
-

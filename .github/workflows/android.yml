@@ -1,7 +1,7 @@
 name: Personal Release Store
 on:
   push:
-    branches: ['work/phase1-installer', 'work/auto-update-notify']
+    branches: ['work/auto-update-notify']
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -11,7 +11,6 @@ permissions:
   contents: read
 jobs:
   verify:
-    if: "!(github.ref == 'refs/heads/work/auto-update-notify' && contains(github.event.head_commit.message, '[deliver-tested]'))"
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -57,9 +56,10 @@ jobs:
           if [[ -n "$EXPECTED_CERT" ]]; then test "${cert,,}" = "${EXPECTED_CERT,,}"; fi
           "$bt/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging"
           grep -E "^(package:|sdkVersion:|targetSdkVersion:)" "$RUNNER_TEMP/badging"
-          grep -F "versionCode='9' versionName='0.6.0'" "$RUNNER_TEMP/badging"
           grep -Fx "sdkVersion:'23'" "$RUNNER_TEMP/badging"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          grep -F "package: name='jp.xiaqui.artifact.store.preview' versionCode='12' versionName='0.8.0'" "$RUNNER_TEMP/badging"
+          stat -c '%s bytes' "$apk"
           cp "$apk" ReleaseStore-preview.apk
           { echo "$GITHUB_SHA"; sha256sum ReleaseStore-preview.apk; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
@@ -111,92 +111,39 @@ jobs:
 
   preview:
     needs: [verify, device]
-    if: (github.ref == 'refs/heads/work/phase1-installer' || github.ref == 'refs/heads/work/auto-update-notify') && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
+    if: github.ref == 'refs/heads/work/auto-update-notify' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v8
         with:
           name: ReleaseStore-preview.apk
           path: delivery
           skip-decompress: true
-      - name: Verify private Release Asset and publish preview
+      - name: Verify Release Asset and publish automatic-update preview
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          apk=delivery/ReleaseStore-v0.6.0-preview.apk
+          apk=delivery/ReleaseStore-v0.8.0-preview.apk
           mv delivery/ReleaseStore-preview.apk "$apk"
-          tag="store-preview-${GITHUB_SHA:0:12}"
+          export PREVIEW_TAG="store-preview-${GITHUB_SHA:0:12}"
+          export PREVIEW_SOURCE="$GITHUB_SHA"
           sha=$(sha256sum "$apk" | cut -d' ' -f1)
-          if ! gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$tag" "$apk" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Release Store 0.6.0 · automatic updates" --notes "Automatic update 0.6.0 (9), fixed-key signed preview. Source: $GITHUB_SHA. SHA-256: $sha"
+          state=$(python .github/release/check-preview.py)
+          if [[ "$state" == absent ]]; then
+            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title 'AppDate 0.8.0 · automatic updates' --notes "PR #6 automatic-update preview 0.8.0 (12), including Issue #8 independent switches. Source: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. Device acceptance pending; not for silent installation. Issue #9, pull-to-refresh, naming overhaul and UI redesign are not included."
+          fi
+          if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PREVIEW_TAG" --jq '.assets[].name' | grep -Fxq ReleaseStore-v0.8.0-preview.apk; then
+            gh release upload "$PREVIEW_TAG" "$apk" -R "$GITHUB_REPOSITORY"
           fi
           mkdir -p verify
-          gh release download "$tag" -R "$GITHUB_REPOSITORY" --pattern 'ReleaseStore-v0.6.0-preview.apk' --dir verify
-          cmp "$apk" verify/ReleaseStore-v0.6.0-preview.apk
-          gh release edit "$tag" -R "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
-          echo "APK SHA-256: $sha" >> "$GITHUB_STEP_SUMMARY"
-
-
-  deliver-tested:
-    if: github.ref == 'refs/heads/work/auto-update-notify' && contains(github.event.head_commit.message, '[deliver-tested]')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      actions: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Require successful tested source and no application changes
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          source=798b967c6f2927d75a92c5abf7a79e8df2b4817f
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/43601806132" > "$RUNNER_TEMP/tested-run.json"
-          test "$(jq -r .conclusion "$RUNNER_TEMP/tested-run.json")" = success
-          test "$(jq -r .head_sha "$RUNNER_TEMP/tested-run.json")" = "$source"
-          git merge-base --is-ancestor "$source" "$GITHUB_SHA"
-          git diff --exit-code "$source" "$GITHUB_SHA" -- app gradle.properties settings.gradle.kts .github/workflows/device-checks.sh
-      - uses: actions/download-artifact@v8
-        with:
-          name: ReleaseStore-preview.apk
-          path: delivery
-          skip-decompress: true
-          run-id: 43601806132
-          github-token: ${{ github.token }}
-      - name: Verify and deliver tested APK without rebuilding
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          source=798b967c6f2927d75a92c5abf7a79e8df2b4817f
-          tag=store-preview-798b967c6f29
-          apk=delivery/ReleaseStore-v0.6.0-preview.apk
-          mv delivery/ReleaseStore-preview.apk "$apk"
-          test "$(stat -c %s "$apk")" = 2136638
-          echo "37d7844cbb38dc7b239411daadc445eceda0ed0ca47549736ebe4de0f2e84c24  $apk" | sha256sum -c
-          bt="$ANDROID_HOME/build-tools/35.0.0"
-          "$bt/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/signature"
-          grep -Fx 'Signer #1 certificate SHA-256 digest: dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2' "$RUNNER_TEMP/signature"
-          grep -Fx 'Verified using v1 scheme (JAR signing): true' "$RUNNER_TEMP/signature"
-          grep -Fx 'Verified using v2 scheme (APK Signature Scheme v2): true' "$RUNNER_TEMP/signature"
-          "$bt/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging"
-          grep -F "package: name='jp.xiaqui.artifact.store.preview' versionCode='9' versionName='0.6.0'" "$RUNNER_TEMP/badging"
-          grep -Fx "sdkVersion:'23'" "$RUNNER_TEMP/badging"
-          export PREVIEW_SOURCE="$source" PREVIEW_TAG="$tag"
-          state=$(python .github/release/check-preview.py)
-          if [[ "$state" = absent ]]; then
-            gh release create "$tag" "$apk" -R "$GITHUB_REPOSITORY" --target "$source" --draft --prerelease --title 'Release Store 0.6.0 · automatic updates' --notes "PR #6 tested preview. Source: $source. CI: 43601806132. APK SHA-256: 37d7844cbb38dc7b239411daadc445eceda0ed0ca47549736ebe4de0f2e84c24. Version 0.6.0 (9). Fixed xiaqui certificate, v1/v2. Device acceptance pending."
-          fi
-          mkdir verify
-          gh release download "$tag" -R "$GITHUB_REPOSITORY" --pattern 'ReleaseStore-v0.6.0-preview.apk' --dir verify
-          cmp "$apk" verify/ReleaseStore-v0.6.0-preview.apk
+          gh release download "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --pattern ReleaseStore-v0.8.0-preview.apk --dir verify
+          cmp "$apk" verify/ReleaseStore-v0.8.0-preview.apk
           python .github/release/check-preview.py
-          gh release edit "$tag" -R "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+          gh release edit "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
           python .github/release/check-preview.py --published
-          gh release view "$tag" -R "$GITHUB_REPOSITORY" --json url,isDraft,isPrerelease,assets
+          echo "APK SHA-256: $sha" >> "$GITHUB_STEP_SUMMARY"

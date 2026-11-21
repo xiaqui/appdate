@@ -309,4 +309,3 @@ open class MainActivity : Activity() {
 }
 
 class SavedActivity : MainActivity()
-

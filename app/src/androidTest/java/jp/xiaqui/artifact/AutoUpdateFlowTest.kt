@@ -21,7 +21,7 @@ class AutoUpdateFlowTest {
         assertEquals(installed.signer,archive.signer)
     }
     @Test fun metadataOnlyThenSingleTransferPersistentSaveAndNoDuplicate() {
-        AutoSettings(context).paused=true
+        AutoSettings(context).apply { startupEnabled=false; periodicEnabled=false }
         val cat=Catalog(context); val repo="update-fixture/app"; cat.remove(repo)
         val source=File(context.applicationInfo.sourceDir)
         val info=Installation.describe(context,source)
@@ -81,7 +81,7 @@ class AutoUpdateFlowTest {
     }
     @Test fun notificationTapOpensConfirmationAndBootRestoresEligibility() {
         val inst=InstrumentationRegistry.getInstrumentation()
-        AutoSettings(context).paused=true
+        AutoSettings(context).apply { startupEnabled=false; periodicEnabled=false }
         val shelf=SavedShelf(context)
         val source=File(context.applicationInfo.sourceDir)
         val info=Installation.describe(context,source)
@@ -109,7 +109,7 @@ class AutoUpdateFlowTest {
         } finally { inst.removeMonitor(monitor); manager.cancel(42043); shelf.delete(file) }
     }
     @Test fun sdkUnknownDoesNotRepeatDownloadAndCorruptSavedFileRemainsRetryable() {
-        AutoSettings(context).paused=true
+        AutoSettings(context).apply { startupEnabled=false; periodicEnabled=false }
         val cat=Catalog(context); val repo="update-fixture/unknown"; cat.remove(repo)
         val info=Installation.describe(context,File(context.applicationInfo.sourceDir))
         val a=ReleaseApk(779,"x.apk",File(context.applicationInfo.sourceDir).length(),null)
@@ -156,12 +156,16 @@ class AutoUpdateFlowTest {
             val edit=ledger.edit(); created.forEach { edit.remove(it.name) }; edit.commit()
         }
     }
-    @Test fun periodicJobIsPersistedAndPauseCancelsIt() {
+    @Test fun periodicJobIsPersistedAndIndependentSwitchCancelsIt() {
         val settings=AutoSettings(context)
-        settings.paused=false; AutoUpdates.schedule(context)
+        settings.periodicEnabled=true; AutoUpdates.schedule(context)
         val job=context.getSystemService(JobScheduler::class.java).allPendingJobs.single { it.id==42042 }
         assertTrue(job.isPersisted); assertEquals(6*60*60*1000L,job.intervalMillis)
-        settings.paused=true; AutoUpdates.schedule(context)
+        settings.periodicEnabled=false; AutoUpdates.schedule(context)
         assertFalse(context.getSystemService(JobScheduler::class.java).allPendingJobs.any { it.id==42042 })
+        settings.startupEnabled=false; settings.downloadEnabled=false
+        assertFalse(settings.startupEnabled); assertFalse(settings.periodicEnabled); assertFalse(settings.downloadEnabled)
+        val recreated=AutoSettings(context)
+        assertFalse(recreated.startupEnabled); assertFalse(recreated.periodicEnabled); assertFalse(recreated.downloadEnabled)
     }
 }

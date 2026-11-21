@@ -9,8 +9,8 @@ android {
         applicationId = "jp.xiaqui.artifact.store.preview"
         minSdk = 23
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.6.0"
+        versionCode = 12
+        versionName = "0.8.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
@@ -38,10 +38,8 @@ android {
 }
 dependencies {
     implementation("androidx.core:core:1.13.1")
-    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     testImplementation("org.json:json:20240303")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
-

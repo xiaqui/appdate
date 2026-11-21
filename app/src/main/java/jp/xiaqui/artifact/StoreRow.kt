@@ -10,7 +10,7 @@ internal fun rowFor(r: Registration, absenceKnown: Boolean, api: Int = 0, instal
     val pkg = metadata.map { it.pkg }.distinct().singleOrNull()?.takeIf { metadata.size == assets.size }
     var queryFailed = false
     val local = try { pkg?.let(installed) } catch (_: Exception) { queryFailed=true; null }
-    // Keep versionCode for update comparisons and details, not the compact home row.
+    // versionCode remains the comparison key and is available on the detail screen.
     fun version(info: ApkInfo) = info.version.ifBlank { "名称不明" }
     val left = local?.let(::version) ?: if (pkg != null && absenceKnown && !queryFailed) "未導入" else "未確認"
     val right = selected?.let(::version) ?: "未確認"
@@ -18,7 +18,7 @@ internal fun rowFor(r: Registration, absenceKnown: Boolean, api: Int = 0, instal
         api > 0 && selected != null && selected.sdk.min > 0 && !selected.sdk.supports(api) -> "端末OS非対応"
         selected != null -> compareInstalled(selected, local, absenceKnown && !queryFailed)
         assets.size > 1 -> "複数APK"
-        assets.isEmpty() && r.fetched != 0L -> "対象なし"
+        assets.isEmpty() && r.fetched != 0L -> "配布なし"
         else -> "未確認"
     }
     val failed = r.error.isNotEmpty()

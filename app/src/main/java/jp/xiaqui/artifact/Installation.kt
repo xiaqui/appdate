@@ -74,4 +74,3 @@ internal object Installation {
         return prompt.setClassName(target.packageName, target.name).putExtra(Intent.EXTRA_RETURN_RESULT, true)
     }
 }
-
