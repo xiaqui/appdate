@@ -79,6 +79,17 @@ class AutoUpdateFlowTest {
             assertTrue(File(context.cacheDir,"store-imports").listFiles().orEmpty().isEmpty())
         } finally { cat.remove(repo) }
     }
+    @Test fun metadataOnlyDetectionRemainsAvailableForManualDownload() {
+        val cat=Catalog(context); val repo="update-fixture/manual-uninspected"; cat.remove(repo)
+        val source=File(context.applicationInfo.sourceDir)
+        val asset=ReleaseApk(780,"manual.apk",source.length(),null)
+        try {
+            val r=cat.register(null,repo,true)
+            cat.update(r) { it.copy(history=listOf(StoreRelease(1,"v-next","2026",false,listOf(asset))),fetched=1,checked=1) }
+            assertEquals("APK要確認",rowFor(cat.get(repo)!!,true,android.os.Build.VERSION.SDK_INT){null}.status)
+            assertTrue(AutoUpdates.manualCandidates(context).any { it.repo==repo })
+        } finally { cat.remove(repo) }
+    }
     @Test fun notificationTapOpensConfirmationAndBootRestoresEligibility() {
         val inst=InstrumentationRegistry.getInstrumentation()
         AutoSettings(context).apply { startupEnabled=false; periodicEnabled=false }

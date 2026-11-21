@@ -41,6 +41,8 @@ class StoreTest {
         assertEquals("確認失敗 HTTP 404",failed.status)
         val multiple = rowFor(r.copy(history=listOf(h.copy(assets=listOf(a,a.copy(id=2))))),true) { apk }
         assertTrue(multiple.versions.contains("最新 未確認"))
+        val uninspected = rowFor(r.copy(inspected=emptyMap()),true) { apk }
+        assertEquals("APK要確認",uninspected.status)
         assertEquals("複数APK",multiple.status)
         val legacy = org.json.JSONObject(CatalogCodec.encode(r)).apply { remove("checked") }
         assertEquals(0L,CatalogCodec.decode(legacy.toString()).checked)

@@ -103,8 +103,9 @@ internal object AutoUpdates {
         return catalog.names().mapNotNull(catalog::get).filter { r ->
             val a=r.visible.firstOrNull()?.assets?.singleOrNull()
             val info=a?.let { r.inspected[it.identity()] }
-            r.error.isEmpty() && info != null && updateEligible(info,runCatching { Installation.installed(context,info.pkg) }.getOrNull(),Build.VERSION.SDK_INT) &&
-                SavedShelf(context).candidate(r.repo,a)?.let { checkedFiles[key(r.repo,a)]==stamp(it) } != true
+            r.error.isEmpty() && a != null &&
+                (info == null || updateEligible(info,runCatching { Installation.installed(context,info.pkg) }.getOrNull(),Build.VERSION.SDK_INT)) &&
+                SavedShelf(context).candidate(r.repo,a)?.let { info != null && checkedFiles[key(r.repo,a)]==stamp(it) } != true
         }
     }
     fun manual(context: Context, override: Boolean, done: () -> Unit) = executor.submit {

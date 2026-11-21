@@ -18,6 +18,7 @@ internal fun rowFor(r: Registration, absenceKnown: Boolean, api: Int = 0, instal
         api > 0 && selected != null && selected.sdk.min > 0 && !selected.sdk.supports(api) -> "端末OS非対応"
         selected != null -> compareInstalled(selected, local, absenceKnown && !queryFailed)
         assets.size > 1 -> "複数APK"
+        assets.size == 1 && r.fetched != 0L -> "APK要確認"
         assets.isEmpty() && r.fetched != 0L -> "配布なし"
         else -> "未確認"
     }
