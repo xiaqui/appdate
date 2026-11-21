@@ -12,6 +12,10 @@ import android.widget.*
 import java.io.File
 import java.util.concurrent.Executors
 
+internal fun protectSensitiveDialog(dialog: AlertDialog) {
+    dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+}
+
 class StoreActivity : Activity() {
     private lateinit var catalog: Catalog
     private lateinit var service: StoreService
@@ -30,7 +34,7 @@ class StoreActivity : Activity() {
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        // Normal screens remain capturable; PAT dialogs use FLAG_SECURE.
         catalog = Catalog(this)
         service = StoreService(this, catalog)
         selected = state?.getString("repo")
@@ -290,9 +294,9 @@ class StoreActivity : Activity() {
             .setMessage("Contents読み取り権限。端末内に暗号化保存します。個別PATを解除すると共通PATに戻ります。")
             .setView(field).setNegativeButton("戻る", null).setNeutralButton("認証を解除") { _,_ -> try { if (r == null) vault.forgetCommon() else vault.forget(r.repo) } catch (e: ImportFailure) { notice(e.message.orEmpty()) } }
             .setPositiveButton(if (r == null) "保存" else "認証して確認", null).create()
-        dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        protectSensitiveDialog(dialog)
         dialog.setOnShowListener {
-            dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            protectSensitiveDialog(dialog)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val token = field.text.toString().trim()
                 if (!Regex("[A-Za-z0-9_]{1,500}").matches(token)) field.error = "トークンを確認してください。"

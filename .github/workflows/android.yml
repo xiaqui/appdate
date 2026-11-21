@@ -1,7 +1,7 @@
 name: Personal Release Store
 on:
   push:
-    branches: ['work/pat-repo-auto-import']
+    branches: ['fix/store-screenshot-secure-scope']
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -111,7 +111,7 @@ jobs:
 
   preview:
     needs: [verify, device]
-    if: github.ref == 'refs/heads/work/pat-repo-auto-import' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
+    if: github.ref == 'refs/heads/fix/store-screenshot-secure-scope' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -122,7 +122,7 @@ jobs:
           name: ReleaseStore-preview.apk
           path: delivery
           skip-decompress: true
-      - name: Verify Release Asset and publish APK-filtered import preview
+      - name: Verify Release Asset and publish screenshot-security preview
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -135,7 +135,7 @@ jobs:
           sha=$(sha256sum "$apk" | cut -d' ' -f1)
           state=$(python .github/release/check-preview.py)
           if [[ "$state" == absent ]]; then
-            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title 'Release Store 0.7.1 · APK-filtered PAT import' --notes "APK-filtered PAT repository import preview 0.7.1 (11). Source: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. PR #5/#6 and later AppDate naming changes are not included."
+            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title 'Release Store 0.7.1 · screenshot security scope' --notes "Screenshot-security preview 0.7.1 (11). Normal Store screens are capturable; PAT dialogs remain protected. Source: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. PR #6, Issue #8/#9, naming and UI redesign are not included."
           fi
           if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PREVIEW_TAG" --jq '.assets[].name' | grep -Fxq ReleaseStore-v0.7.1-preview.apk; then
             gh release upload "$PREVIEW_TAG" "$apk" -R "$GITHUB_REPOSITORY"
