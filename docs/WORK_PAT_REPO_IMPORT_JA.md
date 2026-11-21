@@ -12,6 +12,16 @@
 
 検収は固定署名previewを既存データへ上書きして保持と追加フローを確認した後、データ消去状態でPAT登録から自動追加、初回確認、トップ表示までを確認する。
 
+### 完了確認
+
+- source head: `6decd675975d39a6285b0434ca9629c854da76e4`。main `458ae6cac7b2f9eb02bcb123f1c901514754c257` を第2親に取り込み、PR #4へ反映した。
+- Actions: https://github.com/xiaqui/appdate/actions/runs/44887869029 。単体テスト、lint、固定鍵署名APK、API 23/29計装試験、0.4.2からの上書きと保存APK領域保持がすべて成功した。
+- 独立レビューの初回P2（Activity内のフロー接続が未試験）を調停ロジックへ抽出し、追加分だけの確認、部分失敗継続、PAT時のトップ遷移、手動再取得時の画面維持、追加0件を単体テストで固定。再レビューで未解決P0/P1/P2なし。
+- Preview: https://github.com/xiaqui/appdate/releases/tag/store-preview-6decd675975d
+- APK: `ReleaseStore-v0.7.1-preview.apk`、2,133,819 bytes、SHA-256 `b4c9daa830d8774f14be284c184bd6b1e0fd03d06bee290e7cfaacf7e71944a4`。applicationId `jp.xiaqui.artifact.store.preview`、versionName 0.7.1、versionCode 11、minSdk 23。
+- v1/v2固定署名、証明書SHA-256 `dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2`。Release Assetを再取得してActions内のAPKと一致確認済み。
+- PR #4はopen・未マージ。社長の既存データ上書き検収とデータ初期化後の初回登録検収を待つ。
+
 ## 2026-11-16 APK配布履歴フィルタへの更新
 
 repo改名後の最新main（PR #7統合済み）へ追従し、旧版の「列挙repoを全件追加」を変更した。未登録候補だけについて、公開済みGitHub Releaseを全ページ走査し、アップロード済み・サイズありの `.apk` assetが一つ以上あるrepoだけを追加する。既存登録は走査対象にせず保持する。API失敗やページ途中の失敗は「配布なし」にせずrepo単位で判定保留とし、他候補の確認を継続する。
