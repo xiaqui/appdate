@@ -114,6 +114,21 @@ internal class Catalog(context: Context) {
             throw ImportFailure("同名のGitHub IDが異なります。既存登録を保持します。")
         names().mapNotNull(::get).firstOrNull { id > 0 && it.githubId == id } ?: byName
     }
+    /** Observe an enumerated repository without changing its settings or moving its key. */
+    fun observeRemote(remote: RemoteRepo): ImportChange? = synchronized(lock) {
+        requireIdle()
+        val name = remoteRepoName(remote.name)
+        val existing = registeredIdentity(remote.id, name) ?: return@synchronized null
+        // Enumeration does not prove the historic identity of an ID-less manual entry.
+        // Keep it by name without guessing or persisting the newly observed ID.
+        if (existing.repo == name) ImportChange.EXISTING else ImportChange.RENAMED
+    }
+    /** Add only after the caller has proved that a published APK Release exists. */
+    fun addRemote(remote: RemoteRepo): ImportChange = synchronized(lock) {
+        observeRemote(remote)?.let { return@synchronized it }
+        register(null, remoteRepoName(remote.name), true, remote.id)
+        ImportChange.ADDED
+    }
     fun migrate(r: Registration, name: String, id: Long, previews: Boolean): Registration = synchronized(lock) {
         validateMigration(r, name, id)
         val current = get(r.repo)

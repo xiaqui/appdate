@@ -3,11 +3,17 @@ set -euo pipefail
 pkg=jp.xiaqui.artifact.store.preview
 runner="$pkg.test/androidx.test.runner.AndroidJUnitRunner"
 test_class=jp.xiaqui.artifact.PostPhaseTest
+import_test_class=jp.xiaqui.artifact.RepoImportFlowTest
 instrument() {
   local method=$1
   shift
   adb shell am instrument -w -e class "$test_class#$method" "$@" "$runner" | tee "$RUNNER_TEMP/inst.log"
   grep -Fq 'OK (1 test)' "$RUNNER_TEMP/inst.log"
+}
+import_instrument() {
+  local method=$1
+  adb shell am instrument -w -e class "$import_test_class#$method" -e restartCheck true "$runner" | tee "$RUNNER_TEMP/import-inst.log"
+  grep -Fq 'OK (1 test)' "$RUNNER_TEMP/import-inst.log"
 }
 gradle connectedDebugAndroidTest
 # Gradle may uninstall the target and instrumentation after connected checks.
@@ -16,6 +22,7 @@ instrument processSeed
 adb shell am force-stop "$pkg"
 instrument processRead -e restartCheck true
 instrument processSeed
+import_instrument seed
 adb reboot
 timeout 180 adb wait-for-device
 for i in {1..90}; do
@@ -24,6 +31,7 @@ for i in {1..90}; do
 done
 adb shell input keyevent 82
 instrument processRead -e restartCheck true
+import_instrument reopened
 adb shell wm size 480x800
 adb shell wm density 240
 adb shell settings put system font_scale 1.3
@@ -38,4 +46,4 @@ adb shell run-as "$pkg" mkdir -p files/apks
 adb shell run-as "$pkg" touch files/apks/upgrade-sentinel
 adb install -r delivery/ReleaseStore-preview.apk
 adb shell run-as "$pkg" ls files/apks/upgrade-sentinel
-adb shell dumpsys package "$pkg" | grep 'versionCode=10 '
+adb shell dumpsys package "$pkg" | grep 'versionCode=11 '
