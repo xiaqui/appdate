@@ -299,7 +299,7 @@ class StoreActivity : Activity() {
                 else try {
                     if (r == null) vault.useCommon(token) else vault.use(r.repo, token)
                     field.text.clear(); dialog.dismiss()
-                    if (r != null) refresh(listOf(r)) else importCommon()
+                    if (r != null) refresh(listOf(r)) else importCommon(returnHome = true)
                 }
                 catch (e: ImportFailure) { field.error = e.message }
             }
@@ -307,19 +307,35 @@ class StoreActivity : Activity() {
         dialog.show()
     }
 
-    private fun importCommon() {
-        work("repoを取得中…", {
+    private fun importCommon(returnHome: Boolean = false) {
+        work("repoを登録・更新確認中…", {
             synchronized(importLock) {
                 val token = vault.commonToken() ?: throw ImportFailure("共通PATを登録してください。手動登録も利用できます。")
                 catalog.requireIdle()
-                importRepos(token, GitHubRepos()::page, GitHubApkReleases()::page,
+                val report = importRepos(token, GitHubRepos()::page, GitHubApkReleases()::page,
                     catalog::observeRemote, catalog::addRemote,
                     current = { vault.commonToken() == token }, progress = { report ->
                         if (!imports.edit().putString("summary", report.summary).commit())
                             throw ImportFailure("取得結果を保存できません。登録済みrepoは保持しています。")
                     })
+                val completion = completeRepoImport(report, returnHome) { repo ->
+                    val registration = catalog.get(repo)
+                    if (registration == null) false else {
+                        service.refresh(registration)
+                        val result = catalog.get(repo)
+                        result != null && result.checked > 0L && result.error.isEmpty()
+                    }
+                }
+                if (!imports.edit().putString("summary", report.summary + "\n" + completion.refresh.summary).commit())
+                    throw ImportFailure("更新確認結果を保存できません。登録済みrepoと確認結果は保持しています。")
+                completion
             }
-        })
+        }) { completion ->
+            if (completion.returnHome) {
+                settings = false; shelf = false; selected = null; releaseId = null; offset = 0
+            }
+            render()
+        }
     }
     companion object { private val importLock = Any() }
 

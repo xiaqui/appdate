@@ -1,5 +1,17 @@
 # 共通PAT repo自動登録 作業記録
 
+## 2026-11-21 初回更新確認とトップ遷移
+
+実機でAPK配布履歴フィルタは合格し、12 repo取得、新規7、APK配布履歴なし5、判定保留0を確認した。追加された appdate、forge、sh4a、ipmsg、overlay、wolf-chess、xiking は一覧に反映された。一方、共通PAT保存後に認証設定へ留まり、各行のRelease情報が未確認だったため、PR #4の追加修正として初回フローを接続した。
+
+- `ImportReport` に今回追加したrepo名だけを保持し、既存登録や改名検出を初回確認対象へ混ぜない。
+- PAT保存・変更後は、追加成功分に既存の `StoreService.refresh` を順番に適用し、Release情報・APKメタデータ・端末の導入状態を更新してからアプリ一覧へ戻る。
+- 「repoを再取得」も追加成功分だけを初回確認する。既存登録の一括確認は従来操作を維持する。
+- repo登録と更新確認は個別に永続化する。1 repoの確認失敗やAPI制限で他の確認を止めず、成功済み登録、PAT、履歴、保存APKを取り消さない。自動保存・サイレントインストールは行わない。
+- PR #5/#6の機能は含めず、PR #7のGitHub ID・改名保護を維持する。実機再検収前にマージしない。
+
+検収は固定署名previewを既存データへ上書きして保持と追加フローを確認した後、データ消去状態でPAT登録から自動追加、初回確認、トップ表示までを確認する。
+
 ## 2026-11-16 APK配布履歴フィルタへの更新
 
 repo改名後の最新main（PR #7統合済み）へ追従し、旧版の「列挙repoを全件追加」を変更した。未登録候補だけについて、公開済みGitHub Releaseを全ページ走査し、アップロード済み・サイズありの `.apk` assetが一つ以上あるrepoだけを追加する。既存登録は走査対象にせず保持する。API失敗やページ途中の失敗は「配布なし」にせずrepo単位で判定保留とし、他候補の確認を継続する。
@@ -18,7 +30,7 @@ GitHub IDの照合・新規登録にはmainの `Catalog.registeredIdentity` とI
 - applicationId `jp.xiaqui.artifact.store.preview`、versionName 0.7.1、versionCode 11、minSdk 23。v1/v2署名、証明書SHA-256 `dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2`。従来の固定鍵と一致。
 - 実PATでの列挙範囲・組織承認と物理端末のUI操作は実機再検収待ち。PR #4は未マージ、auto-merge未設定。
 
-2026-11-14。最新TASK.mdの唯一の対象を実装。基準mainは `cf9163d0f875ad2ec9891341d4ae7251054ce3b6`、branchは `work/pat-repo-auto-import`、PRは [#4](https://github.com/xiaqui/artifact/pull/4)。Phase 1・正式Release・外部Intent作業を再実装していない。
+2026-11-14。最新TASK.mdの唯一の対象を実装。基準mainは `cf9163d0f875ad2ec9891341d4ae7251054ce3b6`、branchは `work/pat-repo-auto-import`、PRは [#4](https://github.com/xiaqui/appdate/pull/4)。Phase 1・正式Release・外部Intent作業を再実装していない。
 
 ## 実装
 
@@ -42,9 +54,9 @@ GET /user/reposが返すrepoはPATで閲覧可能な全repoと同一とは限ら
 
 ## 最終確認結果
 
-- [CI 43551921533](https://github.com/xiaqui/artifact/actions/runs/43551921533) は全job成功。単体テスト34件を含むtestDebugUnitTest、lintDebug、署名付きassembleDebug、API 23/29 connectedテストと強制終了/再起動後の認証・登録保持、0.4.2からの上書きと保存APK領域保持を確認。
+- [CI 43551921533](https://github.com/xiaqui/appdate/actions/runs/43551921533) は全job成功。単体テスト34件を含むtestDebugUnitTest、lintDebug、署名付きassembleDebug、API 23/29 connectedテストと強制終了/再起動後の認証・登録保持、0.4.2からの上書きと保存APK領域保持を確認。
 - 独立レビューのP1 1件・P2 2件は修正差分まで再確認済み。未解決P0/P1/P2なし。
-- [検収Release](https://github.com/xiaqui/artifact/releases/tag/store-preview-2c85f2f01f2f) 公開済み（prerelease）。[APK直接取得](https://github.com/xiaqui/artifact/releases/download/store-preview-2c85f2f01f2f/ReleaseStore-v0.4.3-preview.apk)。Releaseから再取得してビルド済みファイルとバイト一致を確認。既存Release/Assetは変更していない。
+- [検収Release](https://github.com/xiaqui/appdate/releases/tag/store-preview-2c85f2f01f2f) 公開済み（prerelease）。[APK直接取得](https://github.com/xiaqui/appdate/releases/download/store-preview-2c85f2f01f2f/ReleaseStore-v0.4.3-preview.apk)。Releaseから再取得してビルド済みファイルとバイト一致を確認。既存Release/Assetは変更していない。
 - ファイル `ReleaseStore-v0.4.3-preview.apk`、2,114,387 bytes、applicationId `jp.xiaqui.artifact.store.preview`、versionName `0.4.3` / versionCode `8`、minSdk 23。
 - ビルド元 `2c85f2f01f2fb81a2bc42de85936cfb81d44983d`。以後の文書結果記録commitはAPKへ含めていない。
 - APK SHA-256 `eb6c16c59487f30b37568b5bb68295c4b24799832a42162389f3400a73819842`。

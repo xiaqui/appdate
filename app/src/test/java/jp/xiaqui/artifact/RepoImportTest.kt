@@ -39,6 +39,7 @@ class RepoImportTest {
         assertEquals(3, report.fetched); assertEquals(3, report.checked)
         assertEquals(2, report.added); assertEquals(1, report.skipped); assertEquals(0, report.deferred)
         assertEquals(listOf("owner/public", "owner/private"), added.map { it.name })
+        assertEquals(listOf("owner/public", "owner/private"), report.addedRepos)
         assertEquals(2, releasePages["owner/public"])
         assertEquals(2, requests.size)
         assertTrue(requests.all { it.url.host == "api.github.com" && it.url.path == "/user/repos" &&
@@ -76,6 +77,7 @@ class RepoImportTest {
         assertEquals(1, report.added); assertEquals(1, report.retained)
         assertEquals(1, report.skipped); assertEquals(1, report.deferred); assertEquals(3, probes)
         assertEquals(listOf("o/has"), added)
+        assertEquals(listOf("o/has"), report.addedRepos)
         assertTrue(report.summary.contains("HTTP 403")); assertFalse(report.summary.contains("secret"))
     }
 
@@ -121,6 +123,46 @@ class RepoImportTest {
         val second = run(); assertEquals(1, second.added); assertTrue(9L in added)
         published = false
         val third = run(); assertEquals(1, third.retained); assertEquals(0, third.checked); assertTrue(9L in added)
+        assertTrue(third.addedRepos.isEmpty())
+    }
+
+    @Test fun initialRefreshTargetsOnlyNewReposAndContinuesAfterPerRepoFailure() {
+        val calls = mutableListOf<String>()
+        val result = refreshAddedRepos(listOf("o/added", "o/failed", "o/added", "o/throws")) { repo ->
+            calls += repo
+            when (repo) {
+                "o/failed" -> false
+                "o/throws" -> throw ImportFailure("fixture")
+                else -> true
+            }
+        }
+        assertEquals(listOf("o/added", "o/failed", "o/throws"), calls)
+        assertEquals(InitialRefreshReport(3, 1, 2), result)
+        assertTrue(result.summary.contains("再試行 2"))
+        assertEquals(InitialRefreshReport(0, 0, 0), refreshAddedRepos(emptyList()) { fail(); false })
+    }
+
+    @Test fun importCompletionKeepsNavigationAndRefreshScopeForPatAndManualFlows() {
+        val called = mutableListOf<String>()
+        val imported = ImportReport(
+            added = 2, retained = 3,
+            addedRepos = listOf("o/new", "o/fails")
+        )
+        val pat = completeRepoImport(imported, returnHome = true) { repo ->
+            called += repo
+            repo != "o/fails"
+        }
+        assertEquals(listOf("o/new", "o/fails"), called)
+        assertEquals(InitialRefreshReport(2, 1, 1), pat.refresh)
+        assertTrue(pat.returnHome)
+
+        called.clear()
+        val manual = completeRepoImport(imported, returnHome = false) { repo -> called += repo; true }
+        assertEquals(listOf("o/new", "o/fails"), called)
+        assertFalse(manual.returnHome)
+        val zero = completeRepoImport(ImportReport(retained = 7), returnHome = true) { fail(); false }
+        assertEquals(InitialRefreshReport(0, 0, 0), zero.refresh)
+        assertTrue(zero.returnHome)
     }
 
     @Test fun listFailuresCancellationAndEmptyResponsesRemainDistinct() {

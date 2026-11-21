@@ -19,7 +19,7 @@ internal data class ImportReport(
     val fetched: Int = 0, val checked: Int = 0, val added: Int = 0,
     val retained: Int = 0, val renamed: Int = 0, val skipped: Int = 0,
     val deferred: Int = 0, val error: String = "", val listingComplete: Boolean = false,
-    val complete: Boolean = false
+    val complete: Boolean = false, val addedRepos: List<String> = emptyList()
 ) {
     val summary get() = buildString {
         append("repo取得 ${if (listingComplete) "完了" else "未完了"} · 取得 $fetched / 追加 $added / 既存 $retained")
@@ -30,6 +30,41 @@ internal data class ImportReport(
     }
 }
 internal enum class ImportChange { ADDED, EXISTING, RENAMED }
+
+internal data class InitialRefreshReport(val total: Int, val succeeded: Int, val failed: Int) {
+    val summary get() = when {
+        total == 0 -> "初回更新確認 0件（新規追加なし）"
+        failed == 0 -> "初回更新確認 $total 件 完了"
+        else -> "初回更新確認 $total 件 · 成功 $succeeded / 未確認・再試行 $failed"
+    }
+}
+
+internal data class ImportCompletion(
+    val refresh: InitialRefreshReport,
+    val returnHome: Boolean
+)
+
+internal fun refreshAddedRepos(repos: List<String>, refresh: (String) -> Boolean): InitialRefreshReport {
+    val targets = repos.distinct()
+    var succeeded = 0
+    var failed = 0
+    targets.forEach { repo ->
+        if (Thread.currentThread().isInterrupted) throw InterruptedException()
+        try {
+            if (refresh(repo)) succeeded++ else failed++
+        } catch (e: Exception) {
+            if (e is InterruptedException) throw e
+            failed++
+        }
+    }
+    return InitialRefreshReport(targets.size, succeeded, failed)
+}
+
+internal fun completeRepoImport(
+    report: ImportReport,
+    returnHome: Boolean,
+    refresh: (String) -> Boolean
+) = ImportCompletion(refreshAddedRepos(report.addedRepos, refresh), returnHome)
 
 internal class GitHubRepos(private val connect: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }) {
     fun page(token: String, page: Int): RepoPage {
@@ -164,7 +199,10 @@ internal fun importRepos(
                         if (hasApkHistory(token, repo, releasePage, current)) {
                             if (Thread.currentThread().isInterrupted || !current()) throw InterruptedException()
                             report = when (add(repo)) {
-                                ImportChange.ADDED -> report.copy(added = report.added + 1)
+                                ImportChange.ADDED -> report.copy(
+                                    added = report.added + 1,
+                                    addedRepos = report.addedRepos + remoteRepoName(repo.name)
+                                )
                                 ImportChange.EXISTING -> report.copy(retained = report.retained + 1)
                                 ImportChange.RENAMED -> report.copy(retained = report.retained + 1, renamed = report.renamed + 1)
                             }
