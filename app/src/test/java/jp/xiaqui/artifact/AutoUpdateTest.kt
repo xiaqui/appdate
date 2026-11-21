@@ -28,6 +28,20 @@ class AutoUpdateTest {
             if (requested=="other") installed.copy(pkg="other") else installed
         })
     }
+    @Test fun retentionUsesLedgerPackageWhenFilenamePrefixWasTruncated() {
+        val longPackage="jp.xiaqui."+"a".repeat(120)
+        assertEquals(longPackage,retainedPackage("${longPackage.take(90)}~1.apk",longPackage))
+        assertEquals("legacy.pkg",retainedPackage("legacy.pkg~1.apk",""))
+    }
+    @Test fun cellularConsentIsBoundToTheApprovedRepoAndAssetSnapshot() {
+        val first=ReleaseApk(1,"one.apk",10,null)
+        val replacement=ReleaseApk(2,"two.apk",20,null)
+        fun registration(repo: String, asset: ReleaseApk) = Registration(repo,true,"",1,"",
+            listOf(StoreRelease(1,"v","2026",false,listOf(asset))))
+        val approved=mapOf("o/one" to first.identity())
+        assertEquals(listOf("o/one"),approvedManualCandidates(listOf(registration("o/one",first),registration("o/new",replacement)),approved).map { it.repo })
+        assertTrue(approvedManualCandidates(listOf(registration("o/one",replacement)),approved).isEmpty())
+    }
     @Test fun wifiConsentAndThrottleAreExplicit() {
         assertFalse(downloadAllowed(NetworkState(true,false),true,false))
         assertTrue(downloadAllowed(NetworkState(true,false),true,true))

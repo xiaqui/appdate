@@ -51,6 +51,11 @@ internal fun migrateAutoPreferences(paused: Boolean, download: Boolean) =
 
 internal enum class AutoTrigger { STARTUP, PERIODIC, MANUAL }
 
+internal fun approvedManualCandidates(rows: List<Registration>, approved: Map<String,String>) = rows.filter { r ->
+    val asset=r.visible.firstOrNull()?.assets?.singleOrNull()
+    asset != null && approved[r.repo]==asset.identity()
+}
+
 internal data class NetworkState(val connected: Boolean, val wifi: Boolean)
 internal fun networkState(context: Context): NetworkState {
     val manager=context.getSystemService(ConnectivityManager::class.java)
@@ -108,15 +113,15 @@ internal object AutoUpdates {
                 SavedShelf(context).candidate(r.repo,a)?.let { info != null && checkedFiles[key(r.repo,a)]==stamp(it) } != true
         }
     }
-    fun manual(context: Context, override: Boolean, done: () -> Unit) = executor.submit {
-        try { run(context.applicationContext, AutoTrigger.MANUAL, override) } finally { done() }
+    fun manual(context: Context, approved: Map<String,String>, override: Boolean, done: () -> Unit) = executor.submit {
+        try { run(context.applicationContext, AutoTrigger.MANUAL, override, approved) } finally { done() }
     }
     private fun enabled(settings: AutoSettings, trigger: AutoTrigger) = when (trigger) {
         AutoTrigger.STARTUP -> settings.startupEnabled
         AutoTrigger.PERIODIC -> settings.periodicEnabled
         AutoTrigger.MANUAL -> true
     }
-    fun run(context: Context, trigger: AutoTrigger, override: Boolean=false) {
+    fun run(context: Context, trigger: AutoTrigger, override: Boolean=false, approved: Map<String,String>?=null) {
         if (!running.compareAndSet(false,true)) return
         val settings=AutoSettings(context)
         val manual=trigger==AutoTrigger.MANUAL
@@ -126,7 +131,8 @@ internal object AutoUpdates {
             if (!enabled(settings,trigger)) return
             prefs.edit().putLong("attempt",System.currentTimeMillis()).putString("summary","前回処理は未完了・再試行可能").commit()
             val catalog=Catalog(context); val service=StoreService(context,catalog)
-            val repos=if (manual) manualCandidates(context).map { it.repo } else catalog.names()
+            val repos=if (manual) approvedManualCandidates(manualCandidates(context),approved.orEmpty()).map { it.repo }
+                else catalog.names()
             for(repo in repos) {
                 if(Thread.currentThread().isInterrupted || !enabled(settings,trigger)) throw InterruptedException()
                 val initial=catalog.get(repo) ?: continue

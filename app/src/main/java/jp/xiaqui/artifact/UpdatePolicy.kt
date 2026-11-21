@@ -5,6 +5,9 @@ internal class UpdateDeferred(message: String) : java.io.IOException(message)
 internal data class RetainedApk(val name: String, val pkg: String, val code: Long, val signer: String,
     val bytes: Long, val time: Long, val automatic: Boolean, val pending: Boolean, val valid: Boolean)
 
+internal fun retainedPackage(fileName: String, recordedPackage: String) =
+    recordedPackage.ifBlank { fileName.substringBefore('~',"") }
+
 /** Null means no safe plan. Always keep one compatible rollback file per installed package. */
 internal fun retentionPlan(rows: List<RetainedApk>, pkg: String, bytes: Long,
     installed: (String) -> ApkInfo?): List<String>? {

@@ -83,7 +83,7 @@ internal class SavedShelf(private val context: Context) {
             val r=record(f)
             val signer=r?.optString("signer").orEmpty()
             val valid=r != null && r.optString("sha256").length==64 && runCatching { hash(f)==r.optString("sha256") }.getOrDefault(false)
-            RetainedApk(f.name,f.name.substringBefore('~',""),r?.optLong("versionCode") ?: 0,signer,
+            RetainedApk(f.name,retainedPackage(f.name,r?.optString("package").orEmpty()),r?.optLong("versionCode") ?: 0,signer,
                 f.length(),r?.optLong("savedAt") ?: 0,r?.optBoolean("automatic") == true,r?.optBoolean("pending") == true || f.name in active,valid)
         }
         val plan=retentionPlan(rows,pkg,bytes) { Installation.installed(context,it) }

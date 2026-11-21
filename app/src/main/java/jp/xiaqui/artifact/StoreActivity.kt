@@ -272,7 +272,8 @@ class StoreActivity : Activity() {
             isEnabled = candidates.isNotEmpty() && !AutoUpdates.running.get()
             setOnClickListener {
                 val bytes = candidates.sumOf { it.visible.first().assets.single().size }
-                fun begin(override: Boolean) = AutoUpdates.manual(this@StoreActivity, override) {
+                val approved = candidates.associate { it.repo to it.visible.first().assets.single().identity() }
+                fun begin(override: Boolean) = AutoUpdates.manual(this@StoreActivity, approved, override) {
                     runOnUiThread { if (!isDestroyed && !busy) render() }
                 }
                 if (!networkState(this@StoreActivity).wifi)
