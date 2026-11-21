@@ -12,6 +12,10 @@ import android.widget.*
 import java.io.File
 import java.util.concurrent.Executors
 
+internal fun protectSensitiveDialog(dialog: AlertDialog) {
+    dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+}
+
 class StoreActivity : Activity() {
     private lateinit var catalog: Catalog
     private lateinit var service: StoreService
@@ -21,6 +25,7 @@ class StoreActivity : Activity() {
     private var releaseId: Long? = null
     private val vault by lazy { StoredAuth(this) }
     private val batch by lazy { getSharedPreferences("batch-result", MODE_PRIVATE) }
+    private val imports by lazy { getSharedPreferences("repo-import-result", MODE_PRIVATE) }
     private var busy = false
     private var settings = false
     private var shelf = false
@@ -102,7 +107,7 @@ class StoreActivity : Activity() {
                     appendLine(a.name + " · " + (info?.let { "${it.pkg} ${it.version} (${it.code}) / ${Installation.status(this@StoreActivity, it)}" } ?: "未解析・判定不能"))
                 }
                 if (assets.size > 4) appendLine("ほか ${assets.size - 4} 件")
-            } else appendLine(if (r.fetched == 0L) "更新未確認" else "対象APKなし")
+            } else appendLine(if (r.fetched == 0L) "更新未確認" else "配布なし（対象APKなし）")
             appendLine("最終成功 " + stamp(r.fetched))
             append("今回の確認 " + stamp(r.checked) + " · " + when {
                 r.error.isNotEmpty() -> "失敗"
@@ -173,6 +178,9 @@ class StoreActivity : Activity() {
             page("認証設定")
             label("共通PATは権限のある全repoで利用します。公開Releaseは原則匿名です。新しいprivate repoはGitHub側でトークンの対象に追加し、必要なら組織の承認を確認してください。期限切れ・失効時は新しいPATを登録してください。")
             button("共通PATの登録・変更・解除") { auth(null) }
+            label("共通PAT保存後、APIが列挙した未登録repoのRelease履歴を確認し、APK配布履歴があるrepoだけを自動追加します。再取得は追加専用です。既存登録は削除しません。APIに出ないrepoは手動登録してください。")
+            button("repoを再取得") { importCommon() }
+            imports.getString("summary", null)?.let { label(it) }
             return
         }
         if (shelf) { library(); return }
@@ -221,6 +229,7 @@ class StoreActivity : Activity() {
         if (registrations.isNotEmpty()) action("一括更新確認") { checkAll(registrations) }
         panel.addView(actions)
         batch.getString("summary", null)?.let { label(it) }
+        imports.getString("summary", null)?.let { label(it) }
         itemsPage(registrations) { repo -> catalog.get(repo)?.let(::addRow) }
     }
 
@@ -285,22 +294,54 @@ class StoreActivity : Activity() {
             .setMessage("Contents読み取り権限。端末内に暗号化保存します。個別PATを解除すると共通PATに戻ります。")
             .setView(field).setNegativeButton("戻る", null).setNeutralButton("認証を解除") { _,_ -> try { if (r == null) vault.forgetCommon() else vault.forget(r.repo) } catch (e: ImportFailure) { notice(e.message.orEmpty()) } }
             .setPositiveButton(if (r == null) "保存" else "認証して確認", null).create()
-        dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        protectSensitiveDialog(dialog)
         dialog.setOnShowListener {
-            dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            protectSensitiveDialog(dialog)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val token = field.text.toString().trim()
                 if (!Regex("[A-Za-z0-9_]{1,500}").matches(token)) field.error = "トークンを確認してください。"
                 else try {
                     if (r == null) vault.useCommon(token) else vault.use(r.repo, token)
                     field.text.clear(); dialog.dismiss()
-                    if (r != null) refresh(listOf(r)) else render()
+                    if (r != null) refresh(listOf(r)) else importCommon(returnHome = true)
                 }
                 catch (e: ImportFailure) { field.error = e.message }
             }
         }
         dialog.show()
     }
+
+    private fun importCommon(returnHome: Boolean = false) {
+        work("repoを登録・更新確認中…", {
+            synchronized(importLock) {
+                val token = vault.commonToken() ?: throw ImportFailure("共通PATを登録してください。手動登録も利用できます。")
+                catalog.requireIdle()
+                val report = importRepos(token, GitHubRepos()::page, GitHubApkReleases()::page,
+                    catalog::observeRemote, catalog::addRemote,
+                    current = { vault.commonToken() == token }, progress = { report ->
+                        if (!imports.edit().putString("summary", report.summary).commit())
+                            throw ImportFailure("取得結果を保存できません。登録済みrepoは保持しています。")
+                    })
+                val completion = completeRepoImport(report, returnHome) { repo ->
+                    val registration = catalog.get(repo)
+                    if (registration == null) false else {
+                        service.refresh(registration)
+                        val result = catalog.get(repo)
+                        result != null && result.checked > 0L && result.error.isEmpty()
+                    }
+                }
+                if (!imports.edit().putString("summary", report.summary + "\n" + completion.refresh.summary).commit())
+                    throw ImportFailure("更新確認結果を保存できません。登録済みrepoと確認結果は保持しています。")
+                completion
+            }
+        }) { completion ->
+            if (completion.returnHome) {
+                settings = false; shelf = false; selected = null; releaseId = null; offset = 0
+            }
+            render()
+        }
+    }
+    companion object { private val importLock = Any() }
 
     private fun refresh(rows: List<Registration>) = work("更新を確認中…", {
         for (r in rows) { if (Thread.currentThread().isInterrupted) throw InterruptedException(); service.refresh(r) }
@@ -351,3 +392,4 @@ class StoreActivity : Activity() {
         }
     }
 }
+
