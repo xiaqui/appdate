@@ -20,8 +20,54 @@ on:
 permissions:
   contents: read
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      reuse_run_id: ${{ steps.plan.outputs.reuse_run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: plan
+        name: Select a new build or a source-identical verified bundle
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_RUN_ID: ${{ inputs.reuse_run_id }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          reuse_run_id=
+          if [[ -n "$REQUESTED_RUN_ID" ]]; then
+            reuse_run_id=$REQUESTED_RUN_ID
+          elif [[ "$GITHUB_EVENT_NAME" == push ]] && git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null && \
+               git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- app settings.gradle.kts gradle.properties; then
+            # CI/release-script-only change: find the newest non-expired bundle
+            # whose verify job succeeded. Full identity validation happens in reuse.
+            while read -r candidate; do
+              [[ "$candidate" == "$GITHUB_RUN_ID" ]] && continue
+              jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$candidate/jobs?per_page=100")
+              jq -e '[.jobs[] | select(.name == "verify" and .conclusion == "success")] | length == 1' <<<"$jobs" >/dev/null || continue
+              artifacts=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$candidate/artifacts?per_page=100")
+              jq -e '[.artifacts[] | select(.name == "verified-preview-bundle" and (.expired | not))] | length == 1' <<<"$artifacts" >/dev/null || continue
+              reuse_run_id=$candidate
+              break
+            done < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?branch=work%2Fauto-update-notify&status=completed&per_page=100" --jq '.workflow_runs[].id')
+          fi
+          if [[ -n "$reuse_run_id" ]]; then
+            [[ "$reuse_run_id" =~ ^[0-9]+$ ]]
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "reuse_run_id=$reuse_run_id" >> "$GITHUB_OUTPUT"
+            echo "Reusing verified bundle from run $reuse_run_id" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "reuse_run_id=" >> "$GITHUB_OUTPUT"
+            echo "No source-identical bundle selected; verify will build once." >> "$GITHUB_STEP_SUMMARY"
+          fi
   verify:
-    if: github.event_name != 'workflow_dispatch' || inputs.reuse_run_id == ''
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -85,7 +131,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   reuse:
-    if: github.event_name == 'workflow_dispatch' && inputs.reuse_run_id != ''
+    needs: plan
+    if: needs.plan.outputs.reuse_run_id != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -95,7 +142,7 @@ jobs:
       - name: Verify source run and successful verify job
         env:
           GH_TOKEN: ${{ github.token }}
-          REUSE_RUN_ID: ${{ inputs.reuse_run_id }}
+          REUSE_RUN_ID: ${{ needs.plan.outputs.reuse_run_id }}
         run: |
           set -euo pipefail
           [[ "$REUSE_RUN_ID" =~ ^[0-9]+$ ]]
@@ -107,7 +154,7 @@ jobs:
           name: verified-preview-bundle
           path: delivery
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.reuse_run_id }}
+          run-id: ${{ needs.plan.outputs.reuse_run_id }}
           github-token: ${{ github.token }}
       - name: Validate reusable bundle against current application source
         run: python3 .github/release/validate-bundle.py --require-current-source
