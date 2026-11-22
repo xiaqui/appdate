@@ -158,7 +158,7 @@ class AutoUpdateFlowTest {
             val saved=cat.get(repo)!!
             assertTrue(guards>3)
             assertFalse(saved.inspected.containsKey(asset.identity()))
-            assertTrue(saved.error.contains("保留"))
+            assertTrue(saved.error.contains("fixture Wi-Fi lost"))
             assertTrue(File(context.cacheDir,"store-imports").listFiles().orEmpty().isEmpty())
         } finally { cat.remove(repo) }
     }
