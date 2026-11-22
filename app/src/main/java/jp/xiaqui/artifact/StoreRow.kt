@@ -31,19 +31,6 @@ internal fun rowFor(r: Registration, absenceKnown: Boolean, api: Int = 0, instal
 }
 
 internal fun batchSummary(repos: List<String>, check: (String) -> StoreRow?): String {
-    var ok = 0
-    var failed = 0
-    var updates = 0
-    var same = 0
-    for (repo in repos) {
-        if (Thread.currentThread().isInterrupted) throw InterruptedException()
-        val status = check(repo)?.outcome ?: continue
-        if (status == "失敗") failed++ else {
-            ok++
-            when (status) { "更新候補" -> updates++; "同一版" -> same++ }
-        }
-    }
-    if (Thread.currentThread().isInterrupted) throw InterruptedException()
-    return "成功 $ok（更新 $updates・同一 $same）／失敗 $failed"
+    return countSummary(batchCounts(repos, check))
 }
 

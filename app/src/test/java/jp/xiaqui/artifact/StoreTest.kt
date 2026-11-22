@@ -64,6 +64,19 @@ class StoreTest {
         try { assertThrows(InterruptedException::class.java) { batchSummary(outcomes) { null } } }
         finally { Thread.interrupted() }
     }
+    @Test fun automaticAndManualResultsShareCountsAndFreshnessLabels() {
+        val counts = BatchCounts(total=4, checked=4, ok=3, updates=1, same=1, failed=1)
+        assertEquals("成功 3（更新 1・同一 1）／失敗 1", countSummary(counts))
+        val auto = formatBatchResult(CheckMethod.STARTUP, CheckPhase.COMPLETE, "2026/11/23 10:00", counts)
+        val manual = formatBatchResult(CheckMethod.MANUAL, CheckPhase.COMPLETE, "2026/11/23 10:01", counts)
+        assertTrue(auto.contains("自動確認（起動時） · 完了（一部失敗）"))
+        assertTrue(manual.contains("手動確認 · 完了（一部失敗）"))
+        assertTrue(auto.endsWith(countSummary(counts)))
+        val interrupted = formatBatchResult(CheckMethod.STARTUP, CheckPhase.INTERRUPTED, "2026/11/23 10:02",
+            counts.copy(checked=2,ok=2,failed=0), "中断", "手動確認 · 完了 · old")
+        assertTrue(interrupted.contains("未完了"))
+        assertTrue(interrupted.contains("前回の確認結果"))
+    }
 
     @Test fun publicationTimeUsesDisplayZoneWithoutChangingUtc() {
         val raw = "2026-11-13T18:26:30Z"

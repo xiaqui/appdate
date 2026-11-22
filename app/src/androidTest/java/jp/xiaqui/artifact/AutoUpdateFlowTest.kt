@@ -12,6 +12,21 @@ import java.net.HttpURLConnection
 @RunWith(AndroidJUnit4::class)
 class AutoUpdateFlowTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+    @Test fun legacyBatchSummaryIsMarkedPreviousAndInterruptedRunKeepsIt() {
+        val prefs=context.getSharedPreferences("batch-result",android.content.Context.MODE_PRIVATE)
+        prefs.edit().clear().putString("summary","成功 7（更新 1・同一 3）／失敗 1").commit()
+        try {
+            val results=BatchResults(context)
+            assertTrue(results.display()!!.startsWith("前回の確認結果"))
+            val run=results.begin(CheckMethod.STARTUP,7)
+            run.record(StoreRow("demo","","","同一版"))
+            run.fail(InterruptedException())
+            val current=results.display()!!
+            assertTrue(current.contains("自動確認（起動時） · 未完了"))
+            assertTrue(current.contains("前回の確認結果"))
+            assertTrue(current.contains("更新 1・同一 3"))
+        } finally { prefs.edit().clear().commit() }
+    }
     @Test fun archiveSdkAndActualInstalledVersionOnOldAndNewAndroid() {
         val file=File(context.applicationInfo.sourceDir)
         val archive=Installation.describe(context,file)

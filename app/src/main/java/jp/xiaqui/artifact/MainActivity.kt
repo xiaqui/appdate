@@ -224,7 +224,15 @@ open class MainActivity : Activity() {
         }) { (file, metadata) -> confirm(file, metadata) }
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (appForeground.started()) AutoUpdates.startup(this)
+    }
     override fun onResume() { super.onResume(); AutoUpdates.reconcileAsync(this) }
+    override fun onStop() {
+        appForeground.stopped(isChangingConfigurations)
+        super.onStop()
+    }
 
     private fun showSaved(file: File) {
         if (protectedApk != file) {
@@ -269,7 +277,8 @@ open class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == PICK && resultCode == RESULT_OK && data?.data != null)
             receive(Intent(Intent.ACTION_VIEW).setDataAndType(data.data, data.type))
-        else if (requestCode == SETTINGS || requestCode == INSTALL)
+        else if (requestCode == SETTINGS || requestCode == INSTALL) {
+            if (requestCode == INSTALL) AutoUpdates.startup(this)
             saved?.let {
                 val result = if (requestCode == SETTINGS) "提供元の許可設定から戻りました。" else if (data?.hasExtra(android.content.pm.PackageInstaller.EXTRA_STATUS) == true)
                     installStatus(data.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, 1))
@@ -286,6 +295,7 @@ open class MainActivity : Activity() {
                 android.widget.Toast.makeText(this, result, android.widget.Toast.LENGTH_LONG).show()
                 confirm(it, details, "保存済みAPKは再度開けます。")
             }
+        }
     }
 
     override fun onDestroy() {

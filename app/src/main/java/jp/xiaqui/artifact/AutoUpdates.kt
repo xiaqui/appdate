@@ -70,6 +70,8 @@ internal object AutoUpdates {
     private const val CHANNEL="prepared-updates"
     private const val NOTICE=42043
     val running=AtomicBoolean(false)
+    private val startupRequested=AtomicBoolean(false)
+    private val startupWorker=AtomicBoolean(false)
     private val checkedFiles=java.util.concurrent.ConcurrentHashMap<String,String>()
     private fun key(repo: String, a: ReleaseApk) = "$repo:${a.identity()}"
     private fun stamp(file: java.io.File) = "${file.name}:${file.length()}:${file.lastModified()}"
@@ -86,11 +88,22 @@ internal object AutoUpdates {
     fun startup(context: Context) {
         val app=context.applicationContext
         schedule(app)
+        startupRequested.set(true)
+        startStartupWorker(app)
+    }
+    private fun startStartupWorker(app: Context) {
+        if (!startupWorker.compareAndSet(false,true)) return
         executor.submit {
-            runCatching { reconcile(app) }
-            val settings=AutoSettings(app)
-            if (settings.startupEnabled && startupDue(settings.prefs.getLong("attempt",0),System.currentTimeMillis()))
-                run(app, AutoTrigger.STARTUP)
+            try {
+                do {
+                    startupRequested.set(false)
+                    runCatching { reconcile(app) }
+                    if (AutoSettings(app).startupEnabled) run(app, AutoTrigger.STARTUP)
+                } while (startupRequested.get())
+            } finally {
+                startupWorker.set(false)
+                if (startupRequested.get()) startStartupWorker(app)
+            }
         }
     }
     fun reconcileAsync(context: Context) { val app=context.applicationContext; executor.submit { runCatching { reconcile(app) } } }
@@ -127,16 +140,20 @@ internal object AutoUpdates {
         val manual=trigger==AutoTrigger.MANUAL
         val prefs=settings.prefs
         var success=0; var failures=0; var held=0; var inspected=0
+        var batchRun: BatchRun? = null
         try {
+            synchronized(updateCheckLock) {
             if (!enabled(settings,trigger)) return
             prefs.edit().putLong("attempt",System.currentTimeMillis()).putString("summary","前回処理は未完了・再試行可能").commit()
             val catalog=Catalog(context); val service=StoreService(context,catalog)
             val repos=if (manual) approvedManualCandidates(manualCandidates(context),approved.orEmpty()).map { it.repo }
                 else catalog.names()
+            if (!manual) batchRun=BatchResults(context).begin(
+                if (trigger==AutoTrigger.STARTUP) CheckMethod.STARTUP else CheckMethod.PERIODIC, repos.size)
             for(repo in repos) {
                 if(Thread.currentThread().isInterrupted || !enabled(settings,trigger)) throw InterruptedException()
                 val initial=catalog.get(repo) ?: continue
-                if(!manual) service.refresh(initial, inspectApks = false)
+                if(!manual) service.refresh(initial)
                 val r=catalog.get(repo) ?: continue
                 var outcome="メタデータ確認済み"
                 if(r.error.isNotEmpty()) { failures++; outcome=r.error }
@@ -159,6 +176,9 @@ internal object AutoUpdates {
                     }
                 }
                 prefs.edit().putString("repo:$repo",outcome).commit()
+                if (!manual) batchRun?.record(catalog.get(repo)?.let {
+                    rowFor(it, Installation.absenceKnown(context), Build.VERSION.SDK_INT) { pkg -> Installation.installed(context,pkg) }
+                })
                 inspected++
                 prefs.edit().putString("summary","確認 $inspected/${repos.size} · 取得 $success / 失敗 $failures / 保留 $held\n$repo · $outcome").commit()
             }
@@ -167,8 +187,11 @@ internal object AutoUpdates {
                 (if(held>0 || failures>0) "\n"+prefs.getString("summary","") else ""))
             if(failures==0 && held==0) change.putLong("success",System.currentTimeMillis())
             change.commit()
+            batchRun?.complete()
             reconcile(context)
+            }
         } catch(e: Exception) {
+            batchRun?.fail(e)
             prefs.edit().putString("summary","未完了 · 取得 $success / 失敗 $failures / 保留 $held\n"+
                 if(e is InterruptedException) "中断しました。保存済みAPKは保持します。" else storeError(e)).commit()
         } finally { running.set(false); prefs.edit().putLong("finished",System.currentTimeMillis()).commit() }

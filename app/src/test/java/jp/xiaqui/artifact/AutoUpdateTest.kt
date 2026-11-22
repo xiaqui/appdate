@@ -52,13 +52,21 @@ class AutoUpdateTest {
         assertTrue(downloadAllowed(NetworkState(true,false),true,true))
         assertTrue(downloadAllowed(NetworkState(true,true),true,false))
         assertFalse(downloadAllowed(NetworkState(false,false),false,true))
-        assertFalse(startupDue(1000,1001)); assertTrue(startupDue(1000,1000+15*60*1000))
-        assertTrue(startupDue(0,1000)); assertTrue(startupDue(1000,1))
     }
     @Test fun independentSwitchMigrationPreservesExplicitLegacyOffs() {
         assertEquals(AutoPreferences(true,false,true),migrateAutoPreferences(paused=false,download=true))
         assertEquals(AutoPreferences(true,false,false),migrateAutoPreferences(paused=false,download=false))
         assertEquals(AutoPreferences(false,false,false),migrateAutoPreferences(paused=true,download=true))
+    }
+    @Test fun startupCheckRunsOncePerLaunchOrExternalReturnButNotForRedraw() {
+        val gate=ForegroundGate()
+        assertTrue(gate.started())
+        assertFalse(gate.started())
+        gate.stopped(changingConfiguration=false)
+        gate.stopped(changingConfiguration=false)
+        assertTrue(gate.started())
+        gate.stopped(changingConfiguration=true)
+        assertFalse(gate.started())
     }
     @Test fun renamedLabelsRemainSamePackageButNewPackageNeverUpdates() {
         val changed=installed.copy(label="New Label",code=3)

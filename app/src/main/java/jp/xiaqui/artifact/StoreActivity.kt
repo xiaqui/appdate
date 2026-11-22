@@ -24,11 +24,15 @@ class StoreActivity : Activity() {
     private var selected: String? = null
     private var releaseId: Long? = null
     private val vault by lazy { StoredAuth(this) }
-    private val batch by lazy { getSharedPreferences("batch-result", MODE_PRIVATE) }
+    private val batch by lazy { BatchResults(this) }
+    private val batchPrefs by lazy { getSharedPreferences("batch-result", MODE_PRIVATE) }
     private val imports by lazy { getSharedPreferences("repo-import-result", MODE_PRIVATE) }
     private val automatic by lazy { AutoSettings(this) }
     private val autoListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
         runOnUiThread { if (!isDestroyed && !isFinishing && !busy) render() }
+    }
+    private val batchListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        runOnUiThread { if (!isDestroyed && !isFinishing && !busy && !settings && !shelf && selected == null) render() }
     }
     private var busy = false
     private var settings = false
@@ -55,15 +59,24 @@ class StoreActivity : Activity() {
         out.putBoolean("settings", settings)
         out.putBoolean("shelf", shelf)
     }
+    override fun onStart() {
+        super.onStart()
+        if (appForeground.started()) AutoUpdates.startup(this)
+    }
     override fun onResume() {
         super.onResume()
         automatic.prefs.registerOnSharedPreferenceChangeListener(autoListener)
+        batchPrefs.registerOnSharedPreferenceChangeListener(batchListener)
         if (!busy) render()
-        AutoUpdates.startup(this)
     }
     override fun onPause() {
         automatic.prefs.unregisterOnSharedPreferenceChangeListener(autoListener)
+        batchPrefs.unregisterOnSharedPreferenceChangeListener(batchListener)
         super.onPause()
+    }
+    override fun onStop() {
+        appForeground.stopped(isChangingConfigurations)
+        super.onStop()
     }
     override fun onDestroy() { executor.shutdownNow(); super.onDestroy() }
 
@@ -168,14 +181,21 @@ class StoreActivity : Activity() {
     }
 
     private fun checkAll(repos: List<String>) {
-        // Only finished results are durable. A restart during this run must not imply completion.
-        batch.edit().putString("summary", "前回の一括確認は未完了").commit()
         work("一括更新を確認中…", {
-            val summary = batchSummary(repos) { repo ->
-                catalog.get(repo)?.let(service::refresh)
-                catalog.get(repo)?.let(::row)
+            synchronized(updateCheckLock) {
+                val report = batch.begin(CheckMethod.MANUAL, repos.size)
+                try {
+                    for (repo in repos) {
+                        if (Thread.currentThread().isInterrupted) throw InterruptedException()
+                        catalog.get(repo)?.let(service::refresh)
+                        report.record(catalog.get(repo)?.let(::row))
+                    }
+                    report.complete()
+                } catch (e: Exception) {
+                    report.fail(e)
+                    throw e
+                }
             }
-            batch.edit().putString("summary", summary).commit()
         })
     }
 
@@ -285,7 +305,7 @@ class StoreActivity : Activity() {
                 else begin(false)
             }
         })
-        batch.getString("summary", null)?.let { label(it) }
+        batch.display()?.let { label(it) }
         imports.getString("summary", null)?.let { label(it) }
         itemsPage(registrations) { repo -> catalog.get(repo)?.let(::addRow) }
     }

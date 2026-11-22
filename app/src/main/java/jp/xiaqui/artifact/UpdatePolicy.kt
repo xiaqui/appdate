@@ -39,5 +39,3 @@ internal fun retentionPlan(rows: List<RetainedApk>, pkg: String, bytes: Long,
 
 internal fun updateEligible(info: ApkInfo, local: ApkInfo?, api: Int) =
     info.sdk.supports(api) && compareInstalled(info,local,false)=="更新候補"
-
-internal fun startupDue(last: Long, now: Long) = last == 0L || now < last || now-last >= 15*60*1000L

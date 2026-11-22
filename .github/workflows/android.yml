@@ -1,7 +1,7 @@
 name: Personal Release Store
 on:
   push:
-    branches: ['work/auto-update-notify']
+    branches: ['work/startup-refresh-summary']
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -53,7 +53,7 @@ jobs:
               jq -e '[.artifacts[] | select(.name == "verified-preview-bundle" and (.expired | not))] | length == 1' <<<"$artifacts" >/dev/null || continue
               reuse_run_id=$candidate
               break
-            done < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?branch=work%2Fauto-update-notify&status=completed&per_page=100" --jq '.workflow_runs[].id')
+            done < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?branch=work%2Fstartup-refresh-summary&status=completed&per_page=100" --jq '.workflow_runs[].id')
           fi
           if [[ -n "$reuse_run_id" ]]; then
             [[ "$reuse_run_id" =~ ^[0-9]+$ ]]
@@ -203,7 +203,7 @@ jobs:
 
   preview:
     needs: [verify, reuse, device]
-    if: always() && needs.device.result == 'success' && (needs.verify.result == 'success' || needs.reuse.result == 'success') && github.ref == 'refs/heads/work/auto-update-notify' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
+    if: always() && needs.device.result == 'success' && (needs.verify.result == 'success' || needs.reuse.result == 'success') && github.ref == 'refs/heads/work/startup-refresh-summary' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -213,7 +213,7 @@ jobs:
         with:
           name: verified-preview-bundle
           path: delivery
-      - name: Verify Release Asset and publish automatic-update preview
+      - name: Verify Release Asset and publish startup-refresh preview
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -231,7 +231,7 @@ jobs:
           sha=$(sha256sum "$apk" | cut -d' ' -f1)
           state=$(python .github/release/check-preview.py)
           if [[ "$state" == absent ]]; then
-            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$PREVIEW_SOURCE" --draft --prerelease --title "AppDate $version · automatic updates" --notes "PR #6 automatic-update preview $version ($code), including Issue #8 independent switches. APK source: $apk_source. CI workflow head: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. Device acceptance pending; not for silent installation. Issue #9, pull-to-refresh, naming overhaul and UI redesign are not included."
+            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$PREVIEW_SOURCE" --draft --prerelease --title "AppDate $version · startup refresh summary" --notes "Startup refresh and shared automatic/manual summary preview $version ($code). APK source: $apk_source. CI workflow head: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. Device acceptance pending; not for silent installation. Issue #9, pull-to-refresh, naming overhaul and UI redesign are not included."
           fi
           asset=$(basename "$apk")
           if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PREVIEW_TAG" --jq '.assets[].name' | grep -Fxq "$asset"; then
