@@ -73,7 +73,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api: [23, 29]
+        # Physical acceptance covers Android 6-10 and 14. CI fills the Android
+        # 11-13 and 15 gaps while retaining the old-device boundaries.
+        api: [23, 29, 30, 31, 33, 34, 35]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

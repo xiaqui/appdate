@@ -132,7 +132,7 @@ class StoreActivity : Activity() {
     }
 
     private fun stamp(time: Long) = StoreTime.local(time)
-    private fun row(r: Registration) = rowFor(r, android.os.Build.VERSION.SDK_INT <= 29, android.os.Build.VERSION.SDK_INT) { Installation.installed(this, it) }
+    private fun row(r: Registration) = rowFor(r, Installation.absenceKnown(this), android.os.Build.VERSION.SDK_INT) { Installation.installed(this, it) }
     private fun addRow(r: Registration) {
         val info = row(r)
         val item = LinearLayout(this).apply {

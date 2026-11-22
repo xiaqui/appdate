@@ -20,6 +20,21 @@ class AutoUpdateFlowTest {
         assertEquals(installed.pkg,archive.pkg); assertEquals(installed.code,archive.code)
         assertEquals(installed.signer,archive.signer)
     }
+    @Test fun packageVisibilityDistinguishesInstalledAbsentAndUnknownOnNewAndroid() {
+        assertTrue("AppDate needs complete package visibility for update comparison", Installation.absenceKnown(context))
+        assertNotNull(Installation.installed(context,context.packageName))
+        val missing="jp.xiaqui.fixture.definitely.not.installed"
+        assertNull(Installation.installed(context,missing))
+        val asset=ReleaseApk(990,"missing.apk",1,null)
+        val remote=Installation.describe(context,File(context.applicationInfo.sourceDir)).copy(pkg=missing,label="Missing fixture")
+        val registration=Registration("fixture/missing",true,"",1,"",
+            listOf(StoreRelease(1,"v","2026",false,listOf(asset))),mapOf(asset.identity() to remote))
+        val row=rowFor(registration,Installation.absenceKnown(context),android.os.Build.VERSION.SDK_INT) {
+            Installation.installed(context,it)
+        }
+        assertTrue(row.versions.startsWith("未導入 →"))
+        assertEquals("未導入",row.status)
+    }
     @Test fun metadataOnlyThenSingleTransferPersistentSaveAndNoDuplicate() {
         AutoSettings(context).apply { startupEnabled=false; periodicEnabled=false }
         val cat=Catalog(context); val repo="update-fixture/app"; cat.remove(repo)

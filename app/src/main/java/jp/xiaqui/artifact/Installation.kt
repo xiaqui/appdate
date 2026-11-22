@@ -46,9 +46,14 @@ internal object Installation {
         catch (_: PackageManager.NameNotFoundException) { null }
     }
 
+    fun absenceKnown(context: Context): Boolean = packageAbsenceKnown(
+        Build.VERSION.SDK_INT,
+        Build.VERSION.SDK_INT < 30 || context.checkSelfPermission(android.Manifest.permission.QUERY_ALL_PACKAGES) == PackageManager.PERMISSION_GRANTED
+    )
+
     fun status(context: Context, meta: ApkInfo): String {
         val local = installed(context, meta.pkg)
-        val comparison = compareInstalled(meta, local, Build.VERSION.SDK_INT <= 29)
+        val comparison = compareInstalled(meta, local, absenceKnown(context))
         return if (local == null) comparison else "$comparison · 導入済み ${local.version} (${local.code})"
     }
 
@@ -74,3 +79,5 @@ internal object Installation {
         return prompt.setClassName(target.packageName, target.name).putExtra(Intent.EXTRA_RETURN_RESULT, true)
     }
 }
+
+internal fun packageAbsenceKnown(api: Int, queryAllGranted: Boolean) = api < 30 || queryAllGranted

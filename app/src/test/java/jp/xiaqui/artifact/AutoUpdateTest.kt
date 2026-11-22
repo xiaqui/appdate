@@ -90,4 +90,11 @@ class AutoUpdateTest {
             assertEquals("端末OS非対応",rowFor(r.copy(inspected=mapOf(asset.identity() to meta.copy(sdk=ApkSdk(24,35)))),true,23){installed}.status)
         }
     }
+    @Test fun packageAbsenceIsOnlyDefinitiveWhenVisibilityIsAvailable() {
+        assertTrue(packageAbsenceKnown(23,false))
+        assertTrue(packageAbsenceKnown(29,false))
+        assertFalse(packageAbsenceKnown(30,false))
+        assertTrue(packageAbsenceKnown(30,true))
+        assertTrue(packageAbsenceKnown(35,true))
+    }
 }
