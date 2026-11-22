@@ -65,7 +65,7 @@ class StoreActivity : Activity() {
     override fun onResume() {
         super.onResume()
         batchPrefs.registerOnSharedPreferenceChangeListener(batchListener)
-        if (!busy) render()
+        if (!busy) renderPreservingScroll()
     }
     override fun onPause() {
         batchPrefs.unregisterOnSharedPreferenceChangeListener(batchListener)

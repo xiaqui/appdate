@@ -158,6 +158,7 @@ internal object AutoUpdates {
                         .putString("summary","確認 $inspected/${repos.size} · 取得 $success / 失敗 $failures / 保留 $held\n$repo · 登録変更").commit()
                     continue
                 }
+                val successBefore=success; val failuresBefore=failures; val heldBefore=held
                 if(!manual) service.refresh(initial)
                 val r=catalog.get(repo)
                 if (!unchangedRegistration(initial, r)) {
@@ -187,10 +188,15 @@ internal object AutoUpdates {
                         outcome=storeError(e)
                     }
                 }
-                prefs.edit().putString("repo:$repo",outcome).commit()
-                if (!manual) batchRun?.record(catalog.get(repo)?.let {
+                val final=catalog.get(repo)
+                if (!unchangedRegistration(initial, final)) {
+                    success=successBefore; held=heldBefore; failures=failuresBefore+1
+                    outcome="登録が確認中に変更されました。"
+                    if (!manual) batchRun?.record(null)
+                } else if (!manual) batchRun?.record(final?.let {
                     rowFor(it, Installation.absenceKnown(context), Build.VERSION.SDK_INT) { pkg -> Installation.installed(context,pkg) }
                 })
+                prefs.edit().putString("repo:$repo",outcome).commit()
                 inspected++
                 prefs.edit().putString("summary","確認 $inspected/${repos.size} · 取得 $success / 失敗 $failures / 保留 $held\n$repo · $outcome").commit()
             }
