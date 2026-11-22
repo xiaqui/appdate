@@ -20,6 +20,7 @@ class StoreActivity : Activity() {
     private lateinit var catalog: Catalog
     private lateinit var service: StoreService
     private lateinit var panel: LinearLayout
+    private lateinit var scroller: ScrollView
     private val executor = Executors.newSingleThreadExecutor()
     private var selected: String? = null
     private var releaseId: Long? = null
@@ -30,7 +31,7 @@ class StoreActivity : Activity() {
     private val automatic by lazy { AutoSettings(this) }
     private val batchListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         if (key == "phase" && prefs.getString("phase", "") != CheckPhase.RUNNING.name)
-            runOnUiThread { if (!isDestroyed && !isFinishing && !busy && !settings && !shelf && selected == null) render() }
+            runOnUiThread { if (!isDestroyed && !isFinishing && !busy && !settings && !shelf && selected == null) renderPreservingScroll() }
     }
     private var busy = false
     private var settings = false
@@ -79,7 +80,8 @@ class StoreActivity : Activity() {
     private fun page(heading: String) {
         title = "Release Store"
         panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad,pad,pad,pad) }
-        setContentView(ScrollView(this).apply { addView(panel) })
+        scroller = ScrollView(this).apply { addView(panel) }
+        setContentView(scroller)
         label(heading, true)
     }
     private fun label(value: String, heading: Boolean = false) {
@@ -304,6 +306,12 @@ class StoreActivity : Activity() {
         batch.display()?.let { label(it) }
         imports.getString("summary", null)?.let { label(it) }
         itemsPage(registrations) { repo -> catalog.get(repo)?.let(::addRow) }
+    }
+
+    private fun renderPreservingScroll() {
+        val oldY = if (::scroller.isInitialized) scroller.scrollY else 0
+        render()
+        scroller.post { if (!isDestroyed && !isFinishing) scroller.scrollTo(0, oldY) }
     }
 
     private fun edit(r: Registration?) {

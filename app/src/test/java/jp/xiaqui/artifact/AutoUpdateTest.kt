@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AutoUpdateTest {
+    @Test fun registrationRevisionMustRemainStableDuringCheck() {
+        val initial=Registration("a/b",false,"one")
+        assertTrue(unchangedRegistration(initial,initial))
+        assertFalse(unchangedRegistration(initial,null))
+        assertFalse(unchangedRegistration(initial,initial.copy(revision="two")))
+    }
+
     private val installed=ApkInfo("pkg","Old Name","2",2,"AA",ApkSdk(23,35))
     private fun row(code: Long, auto: Boolean=true, pending: Boolean=false) = RetainedApk("pkg~$code.apk","pkg",code,"AA",100,code,auto,pending,true)
     @Test fun cleanupOnlyRemovesOldAutoAndKeepsRecoveryAndPending() {

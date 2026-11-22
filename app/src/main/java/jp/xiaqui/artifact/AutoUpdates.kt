@@ -56,6 +56,9 @@ internal fun approvedManualCandidates(rows: List<Registration>, approved: Map<St
     asset != null && approved[r.repo]==asset.identity()
 }
 
+internal fun unchangedRegistration(initial: Registration, current: Registration?) =
+    current != null && current.revision == initial.revision
+
 internal data class NetworkState(val connected: Boolean, val wifi: Boolean)
 internal fun networkState(context: Context): NetworkState {
     val manager=context.getSystemService(ConnectivityManager::class.java)
@@ -157,7 +160,7 @@ internal object AutoUpdates {
                 }
                 if(!manual) service.refresh(initial)
                 val r=catalog.get(repo)
-                if (r == null) {
+                if (!unchangedRegistration(initial, r)) {
                     failures++; inspected++
                     if (!manual) batchRun?.record(null)
                     prefs.edit().putString("repo:$repo","登録が確認中に変更されました。")
