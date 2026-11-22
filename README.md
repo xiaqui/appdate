@@ -36,6 +36,8 @@ GitHub Actionsで単体テスト、lint、API 23/29/34試験、APKの署名・mi
 
 配送は既存の固定鍵・alias `xiaqui` を必須とし、0.4.1の証明書SHA-256とも照合します。Secrets未設定や指紋不一致なら配送は失敗します。同一IDでも以前の一時debug鍵ビルドとは署名が異なります。
 
+PR #6の0.8.1/code 13検収版は [`store-preview-fa230d039ad8`](https://github.com/xiaqui/appdate/releases/tag/store-preview-fa230d039ad8) です。APK sourceは`cd92f9a5e7b30c10c0c4ca863fa5aa857f2238ad`、APK SHA-256は`28cc3ebe4dc65bd38928652cc6c6e53f9cc7c65888266c52ea0b6bc7d752d864`、固定証明書SHA-256は`dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2`です。API 23/29/34で同一APKの導入・計装・0.4.2上書き・データ保持を確認済みで、物理端末検収前にはマージしません。
+
 ## 実機検収
 
 - 通常のアプリ一覧・詳細・認証設定画面ではスクリーンショットを撮影できることを確認。共通PAT／個別PATの入力ダイアログを開いている間だけ撮影不可となり、閉じた後は再び通常画面を撮影できることを確認する。PAT文字列をスクリーンショットやログへ残さない。

@@ -27,7 +27,7 @@
 - verifyで署名済み本体APKと計装APKを一度だけ生成し、source SHA/ソースidentity/applicationId/version/証明書/SHA-256/sizeをmanifestへ保存する。deviceはGradleを実行せず、この本体APKそのものを導入・上書き検証する。版確認はmanifestの実値を使用する。
 - 通常matrixをAPI 23/29/34へ限定。run `44993297128` はverifyと3OS deviceが成功。run `44993805366` はworkflowだけの変更に対してrun `44993297128`のbundleを再利用し、`verify=skipped`、`reuse=success`、API 23/29/34 device成功を確認した。
 - 公開版照合は毎回全APKを取得せず、既存0.8.0最大code 12のRelease digest台帳と、今後添付する小さいmanifestをページネーション取得する。applicationId・証明書・versionCode・APK SHAが不整合なら配送を停止する。
-- 検収APKは0.8.1/code 13、source `cd92f9a5e7b30c10c0c4ca863fa5aa857f2238ad`、APK SHA-256 `28cc3ebe4dc65bd38928652cc6c6e53f9cc7c65888266c52ea0b6bc7d752d864`、証明書SHA-256 `dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2`。PR #6は実機検収・merge承認待ちのままOPENとする。
+- 検収APKは0.8.1/code 13、source `cd92f9a5e7b30c10c0c4ca863fa5aa857f2238ad`、APK SHA-256 `28cc3ebe4dc65bd38928652cc6c6e53f9cc7c65888266c52ea0b6bc7d752d864`、証明書SHA-256 `dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2`。run `44994826850`で同bundleを再利用して3OS成功後、Release再取得・バイト一致まで確認し、`store-preview-fa230d039ad8`へAPK 1件と検証manifestを配送した。PR #6は実機検収・merge承認待ちのままOPENとする。
 
 ## 現在のWork実行対象（唯一）：既存PR #6 自動更新機能＋Issue #8 個別設定の統合・検収APK配送
 

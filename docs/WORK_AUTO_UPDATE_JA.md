@@ -24,6 +24,7 @@ GitHub Actionsでunit、lint、固定鍵署名、API 23/29計装、正式0.4.2�
 - manifestはsource SHA、アプリソースidentity、applicationId、versionCode/name、証明書SHA-256、本体・計装APKのSHA-256/sizeを保持する。workflow/deviceスクリプトのみの変更では、元runのverify成功・artifact有効期限・現在ソースidentity・署名・版・hashを確認してbundleを再利用する。明示run ID指定も可能。不一致や取得不能は停止する。
 - run `44993297128`: verify成功。本体APK SHA-256 `28cc3ebe4dc65bd38928652cc6c6e53f9cc7c65888266c52ea0b6bc7d752d864`。API 23/29/34 device成功。
 - run `44993805366`: run `44993297128`のbundleを自動再利用。verifyはskip、reuse成功、API 23/29/34 device成功。workflow変更に伴うunit/lint/APK再ビルドを削減した。
+- run `44994826850`: 同じbundleを再利用し、verifyはskip、API 23/29/34 device成功、版ゲート成功、Release再取得とバイト一致に成功。検収用Release [`store-preview-fa230d039ad8`](https://github.com/xiaqui/appdate/releases/tag/store-preview-fa230d039ad8)へ`ReleaseStore-v0.8.1-preview.apk` 1件と、そのAPK Asset digest/sizeへ結合した検証manifestを配送した。
 - 配送版は0.8.1/code 13、minSdk 23、applicationId `jp.xiaqui.artifact.store.preview`、source `cd92f9a5e7b30c10c0c4ca863fa5aa857f2238ad`、固定証明書SHA-256 `dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2`。公開済み版検査は全APK再取得をやめ、既存最大版台帳と今後のRelease manifestを照合する。
 
 実機では、既存版への上書きで登録・共通/個別PAT・Release履歴・保存APKが残ること、3スイッチの保持と独立動作、Wi-Fi/モバイル制約、通知からOS確認、手動確認・取得を確認する。合格と明示的merge承認まではPR #6をOPENに保つ。
