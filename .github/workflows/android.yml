@@ -101,6 +101,7 @@ jobs:
                       if not asset["name"].lower().endswith(".apk"):
                           continue
                       dest = Path(tmp) / "prior.apk"
+                      dest.unlink(missing_ok=True)
                       subprocess.run(
                           ["gh", "release", "download", release["tag_name"],
                            "--repo", repo, "--pattern", asset["name"],
