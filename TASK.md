@@ -1,5 +1,26 @@
 # TASK — AppDate 統合の次工程
 
+## 最優先ブロッカー：PR #6 Actions device全滅の根本修正とCI無駄削減（2026-11-22）
+
+**この節を先に完走してから、下記の既存PR #6実装・実機検収タスクに戻る。別PRを作らず、既存ブランチ `work/auto-update-notify` とPR #6を更新。実機合格前のmerge禁止。アプリ本体の機能・データ・署名・applicationIdは変更しない。**
+
+### 現状と確実な手掛かり
+- `52bc46e` のActions run `44992026161` はverify成功、device（API 23/29/34）失敗。先行run `44991601777` もverify成功・device 7件失敗。previewはdevice依存で配送されない。過去run `44990807656` のverify失敗は別の既修正問題。**最初に各runの失敗ログ本文・終了コード・該当コマンドを取得し、推測で修正しない。**
+- `.github/workflows/device-checks.sh` 最終行が `grep 'versionCode=12 '` に固定されているのに、`app/build.gradle.kts` は **0.8.1 / versionCode 13**。これは少なくとも確実な不整合。さらに `gradle connectedDebugAndroidTest` が配送APKと別にビルド・インストールし、署名・同一APK検収を混同する危険がある。**ログで最初の失敗点を確認**し、最終行だけ直して終わりにしない。
+- `.github/workflows/android.yml` はverify→device→previewで、workflowの修正ごとにverify（unit/lint/build/署名検査・Release全件APK比較）とエミュレータを再実行する。通常device matrixは **API 23/29/34（Android 6/10/14）** とする。
+
+### Workへの実行指示
+1. 最新 `xiaqui/rin` README/PERSONAL/STYLE、当repo AGENTS/README/TASK、最新main、PR #6 head、workflow、device-checks、release scripts、run 44992026161/44991601777の**失敗ログ本文**を確認。既存成果とSHAを保全。GitHub上の最新状態を優先し、無駄なAndroid SDK構築・ビルド環境再構築をしない。
+2. device全失敗の**共通原因をログで特定**し、環境・テスト・アプリのどの段階か切り分ける。特に固定versionCode=12、旧版0.4.2からの上書き、`gradle connectedDebugAndroidTest`、installDebugによるAPK差し替え、adb reboot後の起動待ち、スクリーンショット抽出、Android 14の権限/計装差を検証。失敗原因ごとに最小修正し、テスト結果を偽装・skipして緑にしない。
+3. **CIを用途別に分離**：ソース/ビルド設定変更時のみunit/lint/署名済みAPK生成・メタデータ/版検査を実施し、SHA-256・source SHA・applicationId・versionCode・署名fingerprintをmanifestとして成果物に保存。deviceスクリプトやworkflowだけの変更時は、**同じソース・同じ署名の既存成功済みAPKとmanifestを再利用**してdeviceを実行できる明示的な経路を設ける。workflow_dispatch等でrun ID / artifact IDを指定する方式でもよいが、参照元runの成功、コミットのソース同一性、SHA-256、署名、版を検証し、不一致なら停止。期限切れ・不明・権限不足なら再利用せず安全に停止または明示的な再ビルドに切り替える。既存APKと異なるソースの混用は禁止。
+4. **テスト段階の無駄を削減**：通常deviceはAPI 23/29/34のみ。全OSマトリクスは必要時の手動/リリース前検証に分離。成功済みdeviceジョブは同一runのfailed jobs再実行で再利用し、workflow変更時も不要なverifyを回さない。Gradleの重複ビルドを減らし、deviceはverifyで生成した**そのAPK**の上書き・データ保持を検証。計装用APKの別途ビルドが不可避なら明示して区別する。失敗時はどの段階で止まったか要約を残す。Artifactの保存期限と容量に注意し、ReleaseをCIキャッシュ代わりに乱発しない。
+5. **版検査を堅牢化**：固定versionCode/versionName/APKファイル名の重複記述を極力排し、GradleとAPK実体から動的取得。公開済みReleaseの版照合はpackageName・署名・versionCode・APK SHAを確認し、ページネーション、過去Asset取得失敗、同名異内容、異なるapplicationIdを安全に扱う。毎回全Release APKをダウンロードする方式は廃止・最小化し、必要な最新/最大版の信頼できるメタデータまたはキャッシュと整合性検証を設計。失敗を無視して配送しない。**0.8.1 / code 13を根拠なく再度上げない**。異なるAPKを新規配送する場合だけAGENTSの単調増加規則に従う。
+6. 修正を段階的に検証する。最初に失敗した1台（API 23等）の原因を解消し、その後API 23/29/34を通す。deviceだけの変更で再ビルドを繰り返さない。必要なrunのみ起動し、同一原因の失敗が続くときは停止してログ解析へ戻る。GitHub Actionsでverify/device/previewの結果、APK SHA、所要時間・重複ジョブ削減を確認する。
+7. previewは**検収用APKを必要最小限の1件のみ**、すべてのゲート通過後に既存経路で配送。過去の公開Assetを上書きしない。検収APKとCI検証APKのバイナリ同一性を証明し、Release URL、SHA-256、署名、source SHA、versionCode、API別結果、実機検収項目、残課題をPR #6/README/作業記録へ記載。**社長の実機合格・明示的merge承認までPR #6はOPEN。**
+8. 独立レビューを実施しP0/P1を解消。新機能、UI改修、Issue #9、別repo変更を混ぜない。作業途中で止まる場合も再開可能な状態と具体的な未完了事項を残す。
+
+**完了条件：** 原因をログと修正差分で説明できること、API 23/29/34のdevice成功、verifyの不要な再実行を回避できる再利用経路の実証、検収APKの正しい配送、PR #6未マージ。単にテストを減らして成功扱いにするのは不可。
+
 ## 現在のWork実行対象（唯一）：既存PR #6 自動更新機能＋Issue #8 個別設定の統合・検収APK配送
 
 **社長の2026-11-21承認：PR #6の自動更新本体とIssue #8の3つの独立ON/OFF設定を、一連の作業として既存PR #6に仕上げる。実機検収前にmergeしない。** PR #4/#5/#7はmainへ統合済み。完了済み機能を再実装しない。正式repoは `xiaqui/appdate`。旧名 `xiaqui/artifact` のURL・remoteを作業先にしない。
