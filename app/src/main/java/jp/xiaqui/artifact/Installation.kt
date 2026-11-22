@@ -36,7 +36,7 @@ internal object Installation {
         application?.sourceDir = apk.path
         application?.publicSourceDir = apk.path
         val label = application?.let { runCatching { it.loadLabel(pm).toString() }.getOrNull() } ?: record.packageName
-        return info(record, label)
+        return info(record, label).copy(sdk = ApkSdkReader.read(apk), sdkChecked=true)
     }
 
     @Suppress("DEPRECATION")
@@ -46,15 +46,20 @@ internal object Installation {
         catch (_: PackageManager.NameNotFoundException) { null }
     }
 
+    fun absenceKnown(context: Context): Boolean = packageAbsenceKnown(
+        Build.VERSION.SDK_INT,
+        Build.VERSION.SDK_INT < 30 || context.checkSelfPermission(android.Manifest.permission.QUERY_ALL_PACKAGES) == PackageManager.PERMISSION_GRANTED
+    )
+
     fun status(context: Context, meta: ApkInfo): String {
         val local = installed(context, meta.pkg)
-        val comparison = compareInstalled(meta, local, Build.VERSION.SDK_INT <= 29)
+        val comparison = compareInstalled(meta, local, absenceKnown(context))
         return if (local == null) comparison else "$comparison · 導入済み ${local.version} (${local.code})"
     }
 
     fun inspect(context: Context, apk: File): String {
         val meta = describe(context, apk)
-        return "${meta.summary}\n${status(context, meta)}\n署名 SHA-256\n${meta.signer.ifEmpty { "取得不能" }}\n旧版や異なる署名はOSが拒否する場合があります。アンインストールすると対象アプリのデータが消えます。"
+        return "${meta.summary}\n${meta.sdk.label}\n${meta.sdk.detail}\n${status(context, meta)}\n署名 SHA-256\n${meta.signer.ifEmpty { "取得不能" }}\n旧版や異なる署名はOSが拒否する場合があります。アンインストールすると対象アプリのデータが消えます。"
     }
 
     fun permissionSettings(context: Context): Intent? {
@@ -74,3 +79,5 @@ internal object Installation {
         return prompt.setClassName(target.packageName, target.name).putExtra(Intent.EXTRA_RETURN_RESULT, true)
     }
 }
+
+internal fun packageAbsenceKnown(api: Int, queryAllGranted: Boolean) = api < 30 || queryAllGranted

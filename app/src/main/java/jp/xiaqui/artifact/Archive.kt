@@ -67,14 +67,14 @@ internal class Archive(private val file: File) {
 }
 
 internal class ApkStore(private val dir: File) {
-    fun save(staged: File, name: String, pkg: String? = null): File = synchronized(lock) {
+    fun save(staged: File, name: String, pkg: String? = null, enforceFilenamePackageLimit: Boolean = true): File = synchronized(lock) {
         if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) throw IOException()
         val stem = name.substringAfterLast('/').dropLast(4).replace(Regex("[^A-Za-z0-9._-]"), "_")
             .take(60).trim('.').ifEmpty { "artifact" }
         val prefix = pkg?.replace(Regex("[^A-Za-z0-9_.]"), "_")?.take(90)?.plus("~").orEmpty()
         val files = dir.listFiles().orEmpty().filter { it.isFile }
         if (files.size >= 24 || files.sumOf { it.length() } + staged.length() > 512L * 1024 * 1024 ||
-            (prefix.isNotEmpty() && files.count { it.name.startsWith(prefix) } >= 3))
+            (enforceFilenamePackageLimit && prefix.isNotEmpty() && files.count { it.name.startsWith(prefix) } >= 3))
             throw ImportFailure("保存上限です。「保存したAPK」で不要な世代を削除して再試行してください。")
         val target = File(dir, "$prefix$stem-${UUID.randomUUID()}.apk")
         if (!staged.renameTo(target)) throw ImportFailure("APKの保存に失敗しました。")

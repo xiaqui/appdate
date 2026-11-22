@@ -1,0 +1,14 @@
+{
+  "applicationId": "jp.xiaqui.artifact.store.preview",
+  "certificateSha256": "dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2",
+  "maxVersionCode": 12,
+  "versionName": "0.8.0",
+  "apkSha256": [
+    "4c3f7475977a92cf7d02f314f677ae7bea2384d775435373986647f8ee4da537",
+    "916a45890bded1047ab3ca2c7fdb6a5b346188468e45aa58947d9bc5645ca752",
+    "257c52395ed3a06c5335ca1e51522361b61f7edcf10aed138a83ad1b1736c117",
+    "060814bae06856d6dc85519cbf39cf8f9c631bb17b1ce8b11a737ea6f43d6ea8",
+    "f717eea9b6a703bd066c3202cc8cf648f3e88a282a2be5cd1f1bdba3d931a263"
+  ],
+  "evidence": "GitHub Release asset digests for the five published 0.8.0 previews, captured 2026-11-22"
+}
