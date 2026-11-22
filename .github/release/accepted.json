@@ -1,10 +1,10 @@
 {
-  "version": "0.4.2",
-  "versionCode": 6,
-  "source": "b669e184f4b1e1f5d0c4e638ccf6b6e00b995914",
-  "preview": "store-preview-b669e184f4b1",
-  "size": 2103692,
-  "sha256": "e98f9cfe9a4f98b9de51cb9329f84fc4e471483dc25af0da9be5d7be0cdc2e32",
+  "version": "0.8.1",
+  "versionCode": 13,
+  "source": "fa230d039ad833044ee0fe321d9ba321b6dd4070",
+  "preview": "store-preview-fa230d039ad8",
+  "size": 2172091,
+  "sha256": "28cc3ebe4dc65bd38928652cc6c6e53f9cc7c65888266c52ea0b6bc7d752d864",
   "certificate": "dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2",
   "applicationId": "jp.xiaqui.artifact.store.preview"
 }
