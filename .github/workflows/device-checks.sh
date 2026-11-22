@@ -15,9 +15,12 @@ import_instrument() {
   adb shell am instrument -w -e class "$import_test_class#$method" -e restartCheck true "$runner" | tee "$RUNNER_TEMP/import-inst.log"
   grep -Fq 'OK (1 test)' "$RUNNER_TEMP/import-inst.log"
 }
-gradle connectedDebugAndroidTest
-# Gradle may uninstall the target and instrumentation after connected checks.
-gradle installDebug installDebugAndroidTest
+# Install the exact signed product APK produced by verify.  Device jobs must not
+# rebuild or replace it with app-debug.apk.
+adb install -r delivery/ReleaseStore-preview.apk
+adb install -r delivery/ReleaseStore-preview-androidTest.apk
+adb shell am instrument -w "$runner" | tee "$RUNNER_TEMP/all-inst.log"
+grep -Eq 'OK \([0-9]+ tests?\)' "$RUNNER_TEMP/all-inst.log"
 instrument processSeed
 adb shell am force-stop "$pkg"
 instrument processRead -e restartCheck true
@@ -46,4 +49,6 @@ adb shell run-as "$pkg" mkdir -p files/apks
 adb shell run-as "$pkg" touch files/apks/upgrade-sentinel
 adb install -r delivery/ReleaseStore-preview.apk
 adb shell run-as "$pkg" ls files/apks/upgrade-sentinel
-adb shell dumpsys package "$pkg" | grep 'versionCode=12 '
+expected_code=$(jq -er '.versionCode' delivery/manifest.json)
+actual_code=$(adb shell dumpsys package "$pkg" | sed -n 's/.*versionCode=\([0-9][0-9]*\).*/\1/p' | head -1)
+test "$actual_code" = "$expected_code"

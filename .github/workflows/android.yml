@@ -7,10 +7,21 @@ on:
       - 'docs/**'
   # Preview delivery requires a deliberate [publish-preview] commit or manual dispatch.
   workflow_dispatch:
+    inputs:
+      reuse_run_id:
+        description: 'Successful verify job run ID whose bundle should be reused (source-identical CI-only changes)'
+        required: false
+        type: string
+      full_matrix:
+        description: 'Also run Android 11, 12, 13 and 15'
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: read
 jobs:
   verify:
+    if: github.event_name != 'workflow_dispatch' || inputs.reuse_run_id == ''
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -44,7 +55,7 @@ jobs:
           trap 'rm -f "$ANDROID_KEYSTORE_FILE"' EXIT
           printf '%s' "$KEYSTORE_B64" | base64 --decode > "$ANDROID_KEYSTORE_FILE"
           unset KEYSTORE_B64
-          gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
+          gradle --no-daemon testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest
       - name: Verify APK and record build identity
         env:
           EXPECTED_CERT: ${{ vars.STORE_PREVIEW_CERT_SHA256 }}
@@ -62,92 +73,68 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           grep -F "package: name='jp.xiaqui.artifact.store.preview' versionCode='13' versionName='0.8.1'" "$RUNNER_TEMP/badging"
           stat -c '%s bytes' "$apk"
-          cp "$apk" ReleaseStore-preview.apk
-          { echo "$GITHUB_SHA"; sha256sum ReleaseStore-preview.apk; } >> "$GITHUB_STEP_SUMMARY"
-      - name: Reject reused or decreasing APK versionCode across published Releases
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-          import subprocess
-          import tempfile
-          from pathlib import Path
-
-          apk = Path("app/build/outputs/apk/debug/app-debug.apk")
-          aapt = str(Path(os.environ["ANDROID_HOME"]) / "build-tools/35.0.0/aapt")
-          def metadata(path):
-              output = subprocess.check_output([aapt, "dump", "badging", str(path)], text=True)
-              import re
-              match = re.search(r"^package: name='([^']+)' versionCode='([0-9]+)' versionName='([^']*)'", output, re.M)
-              if not match:
-                  raise RuntimeError(f"Cannot read APK package metadata: {path}")
-              return match.group(1), int(match.group(2)), match.group(3)
-
-          current_id, current_code, current_name = metadata(apk)
-          current_hash = hashlib.sha256(apk.read_bytes()).hexdigest()
-          repo = os.environ["GITHUB_REPOSITORY"]
-          releases = json.loads(subprocess.check_output(
-              ["gh", "api", f"repos/{repo}/releases?per_page=100"], text=True))
-          with tempfile.TemporaryDirectory() as tmp:
-              for release in releases:
-                  if release.get("draft"):
-                      continue
-                  for asset in release.get("assets", []):
-                      if not asset["name"].lower().endswith(".apk"):
-                          continue
-                      dest = Path(tmp) / "prior.apk"
-                      dest.unlink(missing_ok=True)
-                      subprocess.run(
-                          ["gh", "release", "download", release["tag_name"],
-                           "--repo", repo, "--pattern", asset["name"],
-                           "--output", str(dest)], check=True)
-                      prior_hash = hashlib.sha256(dest.read_bytes()).hexdigest()
-                      prior_id, prior_code, prior_name = metadata(dest)
-                      if prior_id != current_id or prior_hash == current_hash:
-                          continue
-                      if current_code <= prior_code:
-                          raise SystemExit(
-                              f"Refusing delivery: {current_id} {current_name} "
-                              f"(versionCode {current_code}) differs from published "
-                              f"{release['tag_name']}/{asset['name']} "
-                              f"({prior_name}, versionCode {prior_code}). "
-                              "Increment versionCode and versionName before delivery.")
-          print(f"Version gate passed: {current_id} {current_name} ({current_code})")
-          PY
+          mkdir -p delivery
+          cp "$apk" delivery/ReleaseStore-preview.apk
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk delivery/ReleaseStore-preview-androidTest.apk
+          python3 .github/release/write-bundle-manifest.py | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 .github/release/validate-bundle.py --require-current-source
       - uses: actions/upload-artifact@v7
         with:
-          path: ReleaseStore-preview.apk
-          archive: false
+          name: verified-preview-bundle
+          path: delivery/
+          if-no-files-found: error
+          retention-days: 7
+  reuse:
+    if: github.event_name == 'workflow_dispatch' && inputs.reuse_run_id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify source run and successful verify job
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_RUN_ID: ${{ inputs.reuse_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$REUSE_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_RUN_ID/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.name == "verify" and .conclusion == "success")] | length' \
+            | grep -Fx 1
+      - uses: actions/download-artifact@v8
+        with:
+          name: verified-preview-bundle
+          path: delivery
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.reuse_run_id }}
+          github-token: ${{ github.token }}
+      - name: Validate reusable bundle against current application source
+        run: python3 .github/release/validate-bundle.py --require-current-source
+      - uses: actions/upload-artifact@v7
+        with:
+          name: verified-preview-bundle
+          path: delivery/
           if-no-files-found: error
           retention-days: 7
   device:
-    needs: verify
+    needs: [verify, reuse]
+    if: always() && (needs.verify.result == 'success' || needs.reuse.result == 'success')
     strategy:
       fail-fast: false
       matrix:
         # Routine CI covers Android 6, 10, and 14. Broader OS coverage is reserved for release checks.
-        api: [23, 29, 34]
+        api: ${{ fromJSON(inputs.full_matrix == true && '[23,29,30,31,33,34,35]' || '[23,29,34]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
       - uses: actions/download-artifact@v8
         with:
-          name: ReleaseStore-preview.apk
+          name: verified-preview-bundle
           path: delivery
-          skip-decompress: true
+      - name: Validate exact verified APK bundle
+        run: python3 .github/release/validate-bundle.py --require-current-source
       - name: Fetch verified 0.4.2 update baseline
         env:
           GH_TOKEN: ${{ github.token }}
@@ -168,8 +155,8 @@ jobs:
           retention-days: 7
 
   preview:
-    needs: [verify, device]
-    if: github.ref == 'refs/heads/work/auto-update-notify' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
+    needs: [verify, reuse, device]
+    if: always() && needs.device.result == 'success' && (needs.verify.result == 'success' || needs.reuse.result == 'success') && github.ref == 'refs/heads/work/auto-update-notify' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -177,30 +164,38 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v8
         with:
-          name: ReleaseStore-preview.apk
+          name: verified-preview-bundle
           path: delivery
-          skip-decompress: true
       - name: Verify Release Asset and publish automatic-update preview
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          apk=delivery/ReleaseStore-v0.8.1-preview.apk
+          python3 .github/release/validate-bundle.py --require-current-source
+          python3 .github/release/check-published-version.py
+          version=$(jq -er .versionName delivery/manifest.json)
+          code=$(jq -er .versionCode delivery/manifest.json)
+          export PREVIEW_SOURCE=$(jq -er .sourceSha delivery/manifest.json)
+          apk="delivery/ReleaseStore-v${version}-preview.apk"
           mv delivery/ReleaseStore-preview.apk "$apk"
-          export PREVIEW_TAG="store-preview-${GITHUB_SHA:0:12}"
-          export PREVIEW_SOURCE="$GITHUB_SHA"
+          export PREVIEW_TAG="store-preview-${PREVIEW_SOURCE:0:12}"
           sha=$(sha256sum "$apk" | cut -d' ' -f1)
           state=$(python .github/release/check-preview.py)
           if [[ "$state" == absent ]]; then
-            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title 'AppDate 0.8.1 · automatic updates' --notes "PR #6 automatic-update preview 0.8.1 (13), including Issue #8 independent switches. Source: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. Device acceptance pending; not for silent installation. Issue #9, pull-to-refresh, naming overhaul and UI redesign are not included."
+            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$PREVIEW_SOURCE" --draft --prerelease --title "AppDate $version · automatic updates" --notes "PR #6 automatic-update preview $version ($code), including Issue #8 independent switches. APK source: $PREVIEW_SOURCE. CI workflow head: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. Device acceptance pending; not for silent installation. Issue #9, pull-to-refresh, naming overhaul and UI redesign are not included."
           fi
-          if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PREVIEW_TAG" --jq '.assets[].name' | grep -Fxq ReleaseStore-v0.8.1-preview.apk; then
+          asset=$(basename "$apk")
+          if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PREVIEW_TAG" --jq '.assets[].name' | grep -Fxq "$asset"; then
             gh release upload "$PREVIEW_TAG" "$apk" -R "$GITHUB_REPOSITORY"
           fi
+          manifest_asset="ReleaseStore-v${version}-preview.json"
+          if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PREVIEW_TAG" --jq '.assets[].name' | grep -Fxq "$manifest_asset"; then
+            gh release upload "$PREVIEW_TAG" "delivery/manifest.json#$manifest_asset" -R "$GITHUB_REPOSITORY"
+          fi
           mkdir -p verify
-          gh release download "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --pattern ReleaseStore-v0.8.1-preview.apk --dir verify
-          cmp "$apk" verify/ReleaseStore-v0.8.1-preview.apk
+          gh release download "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --pattern "$asset" --dir verify
+          cmp "$apk" "verify/$asset"
           python .github/release/check-preview.py
           gh release edit "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
           python .github/release/check-preview.py --published
