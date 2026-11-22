@@ -24,6 +24,13 @@
 - verifyで署名済みAPKを一度生成し、deviceジョブは同一APKを再利用する既存構成を維持。ソース同一性を厳密に検証したCIのみの変更ではbundle再利用可能とし、ソース変更時は古いAPKを使い回さない。旧ブランチ名を参照する再利用候補の検索も、新ブランチで正しく機能するよう確認する。
 - 新ブランチのpushで3OS CIが起動すること、手動7OS指定の選択、preview配送条件、誤配送防止を検証する。既存のversionCode単調増加・署名・Releaseゲートを緩めない。
 
+### 追加優先：同一APKの配送時はdevice再試験を省略（2026-11-23）
+- PR #12 のrun 45060907909ではverifyとAPI 23/29/34 deviceが成功。その後、アプリソース非変更の配送headでverifyはskip・bundle reuse成功にもかかわらずdevice 3件が再実行された。**この無駄を以後省くよう、論君はPR #12の `.github/workflows/android.yml` 自体を修正する。記録だけで終わらない。**
+- 再利用元runの署名済みAPK bundleのSHA-256・署名・versionCode・source identityと、対象APIのdeviceジョブ成功結果を照合し、検証用スクリプト・baseline・OS matrix・テスト条件が同一である場合、device 3件をskipする。単にverify成功だけでdevice合格とみなさない。元runの実際のジョブ成功と条件一致を確認する。
+- deviceがskipでも、上記再利用ゲートを通った場合に限りpreview配送を許可する。ソースや検証条件が変わった、検証済みrunが見つからない、artifact期限切れ、照合不能、明示的再検証／full_matrix指定の場合はdeviceを実行（または安全側で停止）。既存の3OS通常／7OS明示指定を維持。
+- APKを再ビルドせず、同じAPKの同じOS検証を繰り返さず、既存のRelease版・署名ゲートを緩めない。検証結果の再利用元run ID、APK digest、OS別成功、skip理由をActions summaryに記録し、正常配送を一度実証する。**新たな検証なしにテスト成功と偽装しない。**
+- この改善はPR #12の追加作業。社長の実機検収・マージ承認までPRはOPENを維持する。
+
 ### 完了条件
 - ONで15分未満の再起動を含め起動ごとに確認し、OFFでは開始しない。
 - 手動／自動の完了結果が同じ定義で集計され、旧「更新1」が根拠なく残り続けない。
