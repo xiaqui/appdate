@@ -117,7 +117,7 @@ jobs:
           grep -E "^(package:|sdkVersion:|targetSdkVersion:)" "$RUNNER_TEMP/badging"
           grep -Fx "sdkVersion:'23'" "$RUNNER_TEMP/badging"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          grep -F "package: name='jp.xiaqui.artifact.store.preview' versionCode='13' versionName='0.8.1'" "$RUNNER_TEMP/badging"
+          grep -F "package: name='jp.xiaqui.artifact.store.preview'" "$RUNNER_TEMP/badging"
           stat -c '%s bytes' "$apk"
           mkdir -p delivery
           cp "$apk" delivery/ReleaseStore-preview.apk
@@ -238,7 +238,8 @@ jobs:
           fi
           manifest_asset="ReleaseStore-v${version}-preview.json"
           if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PREVIEW_TAG" --jq '.assets[].name' | grep -Fxq "$manifest_asset"; then
-            gh release upload "$PREVIEW_TAG" "delivery/manifest.json#$manifest_asset" -R "$GITHUB_REPOSITORY"
+            jq --arg name "$asset" '.releaseApkName = $name' delivery/manifest.json > "delivery/$manifest_asset"
+            gh release upload "$PREVIEW_TAG" "delivery/$manifest_asset" -R "$GITHUB_REPOSITORY"
           fi
           mkdir -p verify
           gh release download "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --pattern "$asset" --dir verify

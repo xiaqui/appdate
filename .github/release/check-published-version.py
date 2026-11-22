@@ -51,7 +51,17 @@ for releases in pages(api):
             digest = asset.get("digest")
             if digest and digest != "sha256:" + hashlib.sha256(body).hexdigest():
                 raise SystemExit("Published manifest digest mismatch: " + asset["name"])
-            records.append(json.loads(body))
+            record = json.loads(body)
+            apk_name = record.get("releaseApkName")
+            matching_apks = [item for item in release.get("assets", []) if item["name"] == apk_name]
+            if not apk_name or len(matching_apks) != 1:
+                raise SystemExit("Published manifest has no unique APK Asset: " + asset["name"])
+            published_apk = matching_apks[0]
+            if published_apk.get("digest") != "sha256:" + record["apk"]["sha256"]:
+                raise SystemExit("Published APK digest does not match manifest: " + apk_name)
+            if published_apk.get("size") != record["apk"]["size"]:
+                raise SystemExit("Published APK size does not match manifest: " + apk_name)
+            records.append(record)
 
 for prior in records:
     prior_id = prior["applicationId"]
