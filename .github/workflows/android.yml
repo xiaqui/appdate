@@ -223,14 +223,15 @@ jobs:
           python3 .github/release/check-published-version.py
           version=$(jq -er .versionName delivery/manifest.json)
           code=$(jq -er .versionCode delivery/manifest.json)
-          export PREVIEW_SOURCE=$(jq -er .sourceSha delivery/manifest.json)
+          apk_source=$(jq -er .sourceSha delivery/manifest.json)
+          export PREVIEW_SOURCE="$GITHUB_SHA"
           apk="delivery/ReleaseStore-v${version}-preview.apk"
           mv delivery/ReleaseStore-preview.apk "$apk"
           export PREVIEW_TAG="store-preview-${PREVIEW_SOURCE:0:12}"
           sha=$(sha256sum "$apk" | cut -d' ' -f1)
           state=$(python .github/release/check-preview.py)
           if [[ "$state" == absent ]]; then
-            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$PREVIEW_SOURCE" --draft --prerelease --title "AppDate $version · automatic updates" --notes "PR #6 automatic-update preview $version ($code), including Issue #8 independent switches. APK source: $PREVIEW_SOURCE. CI workflow head: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. Device acceptance pending; not for silent installation. Issue #9, pull-to-refresh, naming overhaul and UI redesign are not included."
+            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$PREVIEW_SOURCE" --draft --prerelease --title "AppDate $version · automatic updates" --notes "PR #6 automatic-update preview $version ($code), including Issue #8 independent switches. APK source: $apk_source. CI workflow head: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. Device acceptance pending; not for silent installation. Issue #9, pull-to-refresh, naming overhaul and UI redesign are not included."
           fi
           asset=$(basename "$apk")
           if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PREVIEW_TAG" --jq '.assets[].name' | grep -Fxq "$asset"; then
