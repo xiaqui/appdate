@@ -107,6 +107,8 @@ class AutoUpdateFlowTest {
     }
     @Test fun notificationTapOpensConfirmationAndBootRestoresEligibility() {
         val inst=InstrumentationRegistry.getInstrumentation()
+        if (android.os.Build.VERSION.SDK_INT >= 33)
+            inst.uiAutomation.grantRuntimePermission(context.packageName,android.Manifest.permission.POST_NOTIFICATIONS)
         AutoSettings(context).apply { startupEnabled=false; periodicEnabled=false }
         val shelf=SavedShelf(context)
         val source=File(context.applicationInfo.sourceDir)
