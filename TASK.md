@@ -18,6 +18,12 @@
 6. **Git/配送**：最新mainから新しい実装ブランチ・PRを作る。旧PR #6は再利用しない。既存applicationId・固定署名・minSdk23・設定/PAT/データを保持。異なるAPKを新規配送する場合はAGENTS.mdに従いversionCode/versionNameを増やし、必要最小限の検収用previewをReleaseへ1件配送する。SHA・署名・source SHA・OS検証結果を記録。**社長の実機検収と明示的マージ承認まではマージしない。**
 7. **対象外**：全面UI改修、名称統一、下スワイプ、Issue #9、外部Intent、他repo変更。今回の集計と起動時確認に必要な最小限の表示変更のみ許可する。
 
+### CI workflow の移行・実行範囲（追加確認 2026-11-23）
+- 現行 `.github/workflows/android.yml` はpush監視対象とpreview配送条件が旧マージ済みブランチ `work/auto-update-notify` に固定されている。新しい実装ブランチでpush時にCIが自動実行され、検収用previewを配送できるように変更する。旧PR #6専用のpreviewタイトル・説明文も新PRに合わせ、旧ブランチへの誤配送を防ぐ。
+- **通常CIのdevice matrixはAPI 23/29/34の3種類を維持**する。API 23/29/30/31/33/34/35の7種類は、手動 `full_matrix=true` または明示的 `[full-matrix]` の場合のみ。新ブランチ対応を理由に全OS検証をデフォルト化しない。
+- verifyで署名済みAPKを一度生成し、deviceジョブは同一APKを再利用する既存構成を維持。ソース同一性を厳密に検証したCIのみの変更ではbundle再利用可能とし、ソース変更時は古いAPKを使い回さない。旧ブランチ名を参照する再利用候補の検索も、新ブランチで正しく機能するよう確認する。
+- 新ブランチのpushで3OS CIが起動すること、手動7OS指定の選択、preview配送条件、誤配送防止を検証する。既存のversionCode単調増加・署名・Releaseゲートを緩めない。
+
 ### 完了条件
 - ONで15分未満の再起動を含め起動ごとに確認し、OFFでは開始しない。
 - 手動／自動の完了結果が同じ定義で集計され、旧「更新1」が根拠なく残り続けない。
