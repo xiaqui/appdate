@@ -122,7 +122,11 @@ class AutoUpdateFlowTest {
             AutoSettings(context).prefs.edit().remove("notified").commit()
             AutoUpdates.publishReady(context,listOf(file to info))
             val notification=manager.activeNotifications.single { it.id==42043 }.notification
-            notification.contentIntent.send()
+            if (android.os.Build.VERSION.SDK_INT >= 34) {
+                val options=android.app.ActivityOptions.makeBasic()
+                    .setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+                notification.contentIntent.send(context,0,null,null,null,null,options.toBundle())
+            } else notification.contentIntent.send()
             val activity=inst.waitForMonitorWithTimeout(monitor,5000)
             assertNotNull("Notification must open confirmation Activity",activity)
             inst.runOnMainSync { activity.finish() }
