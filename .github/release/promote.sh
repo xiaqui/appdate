@@ -11,7 +11,9 @@ cert=$(jq -er '.certificate' "$manifest")
 package=$(jq -er '.applicationId' "$manifest")
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$source_sha" =~ ^[0-9a-f]{40}$ ]]
 git fetch origin main --quiet
-git merge-base --is-ancestor "$source_sha" origin/main
+# Squash merges do not preserve the original preview commit as an ancestor.
+# Require the accepted source and current main to have identical application/build inputs.
+git diff --quiet "$source_sha" origin/main -- app settings.gradle.kts gradle.properties
 test "$(git rev-parse "refs/tags/$preview^{commit}")" = "$source_sha"
 tag="v$version"
 apk="ReleaseStore-$version.apk"
