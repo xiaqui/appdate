@@ -68,6 +68,19 @@ class AutoUpdateTest {
         gate.stopped(changingConfiguration=true)
         assertFalse(gate.started())
     }
+    @Test fun startupRequestsCoalesceButNeverLoseARequestDuringWork() {
+        val requests=CoalescedRequests()
+        assertTrue(requests.request())
+        assertFalse(requests.request())
+        assertTrue(requests.consume())
+        assertFalse(requests.consume())
+        assertFalse(requests.request())
+        assertTrue(requests.consume())
+        assertFalse(requests.releaseAndReacquireIfPending())
+        assertTrue(requests.request())
+        assertFalse(requests.request())
+        assertTrue(requests.releaseAndReacquireIfPending())
+    }
     @Test fun renamedLabelsRemainSamePackageButNewPackageNeverUpdates() {
         val changed=installed.copy(label="New Label",code=3)
         assertTrue(updateEligible(changed,installed,23))

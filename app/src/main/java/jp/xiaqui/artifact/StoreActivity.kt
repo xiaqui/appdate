@@ -28,11 +28,9 @@ class StoreActivity : Activity() {
     private val batchPrefs by lazy { getSharedPreferences("batch-result", MODE_PRIVATE) }
     private val imports by lazy { getSharedPreferences("repo-import-result", MODE_PRIVATE) }
     private val automatic by lazy { AutoSettings(this) }
-    private val autoListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        runOnUiThread { if (!isDestroyed && !isFinishing && !busy) render() }
-    }
-    private val batchListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        runOnUiThread { if (!isDestroyed && !isFinishing && !busy && !settings && !shelf && selected == null) render() }
+    private val batchListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+        if (key == "phase" && prefs.getString("phase", "") != CheckPhase.RUNNING.name)
+            runOnUiThread { if (!isDestroyed && !isFinishing && !busy && !settings && !shelf && selected == null) render() }
     }
     private var busy = false
     private var settings = false
@@ -65,12 +63,10 @@ class StoreActivity : Activity() {
     }
     override fun onResume() {
         super.onResume()
-        automatic.prefs.registerOnSharedPreferenceChangeListener(autoListener)
         batchPrefs.registerOnSharedPreferenceChangeListener(batchListener)
         if (!busy) render()
     }
     override fun onPause() {
-        automatic.prefs.unregisterOnSharedPreferenceChangeListener(autoListener)
         batchPrefs.unregisterOnSharedPreferenceChangeListener(batchListener)
         super.onPause()
     }

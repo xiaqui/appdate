@@ -1,8 +1,20 @@
 package jp.xiaqui.artifact
 
 import android.content.Context
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal val updateCheckLock = Any()
+
+internal class CoalescedRequests {
+    private val requested = AtomicBoolean(false)
+    private val worker = AtomicBoolean(false)
+    fun request(): Boolean { requested.set(true); return worker.compareAndSet(false,true) }
+    fun consume(): Boolean = requested.getAndSet(false)
+    fun releaseAndReacquireIfPending(): Boolean {
+        worker.set(false)
+        return requested.get() && worker.compareAndSet(false,true)
+    }
+}
 
 internal val appForeground = ForegroundGate()
 
@@ -99,7 +111,11 @@ internal class BatchResults(context: Context) {
     }
 
     fun begin(method: CheckMethod, total: Int): BatchRun {
-        val previous = prefs.getString("summary", null).orEmpty()
+        val legacy = prefs.getInt("schema", 0) < 2
+        val current = prefs.getString("summary", null).orEmpty()
+        val previous = prefs.getString("last-complete", null)
+            ?: current.takeIf { legacy || prefs.getString("phase", "") == CheckPhase.COMPLETE.name }.orEmpty()
+        if (legacy && current.isNotBlank()) prefs.edit().putString("last-complete", current).commit()
         val run = BatchRun(this, method, System.currentTimeMillis(), BatchAccumulator(total), previous)
         save(run, CheckPhase.RUNNING)
         return run
@@ -109,15 +125,15 @@ internal class BatchResults(context: Context) {
         val now = System.currentTimeMillis()
         val counts = run.accumulator.counts()
         val summary = formatBatchResult(run.method, phase, StoreTime.local(if (phase == CheckPhase.RUNNING) run.started else now), counts, reason, run.previous)
-        prefs.edit()
+        val edit = prefs.edit()
             .putInt("schema", 2)
             .putString("method", run.method.name)
             .putString("phase", phase.name)
             .putLong("started", run.started)
             .putLong("finished", if (phase == CheckPhase.RUNNING) 0L else now)
             .putString("summary", summary)
-            .putString("previous", run.previous)
-            .commit()
+        if (phase == CheckPhase.COMPLETE) edit.putString("last-complete", summary)
+        edit.commit()
     }
 
     internal fun progress(run: BatchRun) = save(run, CheckPhase.RUNNING)

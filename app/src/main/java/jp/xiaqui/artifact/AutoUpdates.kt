@@ -70,8 +70,7 @@ internal object AutoUpdates {
     private const val CHANNEL="prepared-updates"
     private const val NOTICE=42043
     val running=AtomicBoolean(false)
-    private val startupRequested=AtomicBoolean(false)
-    private val startupWorker=AtomicBoolean(false)
+    private val startupRequests=CoalescedRequests()
     private val checkedFiles=java.util.concurrent.ConcurrentHashMap<String,String>()
     private fun key(repo: String, a: ReleaseApk) = "$repo:${a.identity()}"
     private fun stamp(file: java.io.File) = "${file.name}:${file.length()}:${file.lastModified()}"
@@ -88,21 +87,17 @@ internal object AutoUpdates {
     fun startup(context: Context) {
         val app=context.applicationContext
         schedule(app)
-        startupRequested.set(true)
-        startStartupWorker(app)
+        if (startupRequests.request()) startStartupWorker(app)
     }
     private fun startStartupWorker(app: Context) {
-        if (!startupWorker.compareAndSet(false,true)) return
         executor.submit {
             try {
-                do {
-                    startupRequested.set(false)
+                while (startupRequests.consume()) {
                     runCatching { reconcile(app) }
                     if (AutoSettings(app).startupEnabled) run(app, AutoTrigger.STARTUP)
-                } while (startupRequested.get())
+                }
             } finally {
-                startupWorker.set(false)
-                if (startupRequested.get()) startStartupWorker(app)
+                if (startupRequests.releaseAndReacquireIfPending()) startStartupWorker(app)
             }
         }
     }
@@ -152,9 +147,23 @@ internal object AutoUpdates {
                 if (trigger==AutoTrigger.STARTUP) CheckMethod.STARTUP else CheckMethod.PERIODIC, repos.size)
             for(repo in repos) {
                 if(Thread.currentThread().isInterrupted || !enabled(settings,trigger)) throw InterruptedException()
-                val initial=catalog.get(repo) ?: continue
+                val initial=catalog.get(repo)
+                if (initial == null) {
+                    failures++; inspected++
+                    if (!manual) batchRun?.record(null)
+                    prefs.edit().putString("repo:$repo","登録が確認中に変更されました。")
+                        .putString("summary","確認 $inspected/${repos.size} · 取得 $success / 失敗 $failures / 保留 $held\n$repo · 登録変更").commit()
+                    continue
+                }
                 if(!manual) service.refresh(initial)
-                val r=catalog.get(repo) ?: continue
+                val r=catalog.get(repo)
+                if (r == null) {
+                    failures++; inspected++
+                    if (!manual) batchRun?.record(null)
+                    prefs.edit().putString("repo:$repo","登録が確認中に変更されました。")
+                        .putString("summary","確認 $inspected/${repos.size} · 取得 $success / 失敗 $failures / 保留 $held\n$repo · 登録変更").commit()
+                    continue
+                }
                 var outcome="メタデータ確認済み"
                 if(r.error.isNotEmpty()) { failures++; outcome=r.error }
                 else if (manual || settings.downloadEnabled) {

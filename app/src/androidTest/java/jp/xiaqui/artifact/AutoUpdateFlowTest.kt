@@ -25,6 +25,11 @@ class AutoUpdateFlowTest {
             assertTrue(current.contains("自動確認（起動時） · 未完了"))
             assertTrue(current.contains("前回の確認結果"))
             assertTrue(current.contains("更新 1・同一 3"))
+            val retry=results.begin(CheckMethod.STARTUP,7)
+            retry.fail(InterruptedException())
+            val repeated=results.display()!!
+            assertEquals(1,Regex("更新 1・同一 3").findAll(repeated).count())
+            assertTrue(repeated.length < current.length + 100)
         } finally { prefs.edit().clear().commit() }
     }
     @Test fun archiveSdkAndActualInstalledVersionOnOldAndNewAndroid() {

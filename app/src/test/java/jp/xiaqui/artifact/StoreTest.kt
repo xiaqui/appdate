@@ -63,6 +63,7 @@ class StoreTest {
         Thread.currentThread().interrupt()
         try { assertThrows(InterruptedException::class.java) { batchSummary(outcomes) { null } } }
         finally { Thread.interrupted() }
+        assertEquals("成功 0（更新 0・同一 0）／失敗 1", batchSummary(listOf("deleted")) { null })
     }
     @Test fun automaticAndManualResultsShareCountsAndFreshnessLabels() {
         val counts = BatchCounts(total=4, checked=4, ok=3, updates=1, same=1, failed=1)
