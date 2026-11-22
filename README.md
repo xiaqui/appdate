@@ -1,6 +1,6 @@
 # Release Store — 個人用 Android アプリストア
 
-GitHub Releasesを配布元として、登録した複数のpublic/privateリポジトリのAPKを端末で確認・更新する試作です。Android 6〜10（API 23〜29）が主要対象です。
+GitHub Releasesを配布元として、登録した複数のpublic/privateリポジトリのAPKを端末で確認・更新する試作です。Android 6〜10（API 23〜29）が主要対象で、基盤アプリとしてAndroid 14（API 34）までCI互換性を確認します。
 
 ## 初回設定
 
@@ -32,7 +32,7 @@ GitHub Releasesを配布元として、登録した複数のpublic/privateリポ
 
 ## 配送・署名
 
-GitHub Actionsで単体テスト、lint、API 23/29試験、APKの署名・minSdkを検査し、SHA単位の検収用プレリリースへ添付して再取得・バイト照合します。Actions ArtifactはCI内の受け渡し用です。同じタグのAssetを別バイナリで上書きしません。
+GitHub Actionsで単体テスト、lint、API 23/29/34試験、APKの署名・minSdkを検査し、SHA単位の検収用プレリリースへ添付して再取得・バイト照合します。verifyが署名済み本体APKと計装APKを一度だけ生成し、source SHA、ソースidentity、applicationId、版、証明書、SHA-256をmanifestに記録します。deviceはGradleで本体を再ビルドせず、そのAPK自体で初回導入・旧版上書き・データ保持を検証します。CIだけの変更では、成功済みrunのbundleを同一ソース・署名・hash検証後に再利用できます。不一致・期限切れ・取得不能なら安全側に停止します。Actions Artifactは7日間のCI内受け渡し用で、Releaseをキャッシュ代わりに増やしません。同じタグのAssetを別バイナリで上書きしません。
 
 配送は既存の固定鍵・alias `xiaqui` を必須とし、0.4.1の証明書SHA-256とも照合します。Secrets未設定や指紋不一致なら配送は失敗します。同一IDでも以前の一時debug鍵ビルドとは署名が異なります。
 
@@ -51,7 +51,7 @@ Release・更新確認・保存日時は表示時に端末のタイムゾーン�
 
 実機検収済みのAPKを再ビルドせず昇格します。対象の版・元SHA・サイズ・APKと証明書の指紋は `.github/release/accepted.json` を参照してください。mainの **Promote accepted APK** でpublishを明示するか、配送設定更新のマージコミットに `[publish-stable]` を指定します。PRでは読み取り検証のみ行います。既存の公開Assetを差し替えず、ドラフトから再取得してビルド済みAPKとの一致を確認してから正式公開します。
 
-## 自動更新確認・通知（0.8.0検収版）
+## 自動更新確認・通知（0.8.1検収版）
 
 設定の「自動更新」には、互いに独立した3項目があります。起動時の自動更新確認は初期値ON、約6時間ごとのバックグラウンド確認は初期値OFF、Wi-Fi接続時のAPK自動取得は初期値ONです。定期確認をOFFにするとOSの予約を解除します。起動時確認や自動取得をOFFにしても、手動の一括確認・個別確認・一括ダウンロードは利用できます。旧版で「自動処理を一時停止」していた場合は、明示した停止を守って3項目ともOFFへ移行し、旧版で自動取得だけをOFFにしていた場合もその値を保持します。
 
