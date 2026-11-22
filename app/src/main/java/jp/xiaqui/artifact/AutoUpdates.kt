@@ -67,6 +67,8 @@ internal fun networkState(context: Context): NetworkState {
         caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true)
 }
 internal fun downloadAllowed(network: NetworkState, wifiOnly: Boolean, override: Boolean) = network.connected && (!wifiOnly || network.wifi || override)
+internal fun automaticInspectionAllowed(downloadEnabled: Boolean, network: NetworkState) =
+    downloadEnabled && downloadAllowed(network, wifiOnly = true, override = false)
 
 internal object AutoUpdates {
     private const val JOB=42042
@@ -159,7 +161,15 @@ internal object AutoUpdates {
                     continue
                 }
                 val successBefore=success; val failuresBefore=failures; val heldBefore=held
-                if(!manual) service.refresh(initial)
+                if(!manual) {
+                    val inspectApks=automaticInspectionAllowed(settings.downloadEnabled,networkState(context))
+                    service.refresh(initial,inspectApks) {
+                        if (Thread.currentThread().isInterrupted || !enabled(settings,trigger)) throw InterruptedException()
+                        if (!settings.downloadEnabled) throw UpdateDeferred("自動取得を停止しました。")
+                        if (!automaticInspectionAllowed(true,networkState(context)))
+                            throw UpdateDeferred("Wi-Fi待ち・通信切断のためAPK解析を保留しました。")
+                    }
+                }
                 val r=catalog.get(repo)
                 if (r == null || !unchangedRegistration(initial, r)) {
                     failures++; inspected++

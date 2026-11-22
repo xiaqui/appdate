@@ -2,8 +2,10 @@ package jp.xiaqui.artifact
 
 import android.content.Context
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.UUID
 
 internal val updateCheckLock = Any()
+internal val batchProcessId: String = UUID.randomUUID().toString()
 
 internal class CoalescedRequests {
     private val requested = AtomicBoolean(false)
@@ -106,11 +108,13 @@ internal class BatchResults(context: Context) {
     private val prefs = context.getSharedPreferences("batch-result", Context.MODE_PRIVATE)
 
     fun display(): String? {
+        recoverInterrupted()
         val summary = prefs.getString("summary", null)?.takeIf { it.isNotBlank() } ?: return null
         return if (prefs.getInt("schema", 0) >= 2) summary else "前回の確認結果 · $summary"
     }
 
     fun begin(method: CheckMethod, total: Int): BatchRun {
+        recoverInterrupted()
         val legacy = prefs.getInt("schema", 0) < 2
         val current = prefs.getString("summary", null).orEmpty()
         val previous = prefs.getString("last-complete", null)
@@ -131,9 +135,40 @@ internal class BatchResults(context: Context) {
             .putString("phase", phase.name)
             .putLong("started", run.started)
             .putLong("finished", if (phase == CheckPhase.RUNNING) 0L else now)
+            .putInt("total", counts.total)
+            .putInt("checked", counts.checked)
+            .putInt("ok", counts.ok)
+            .putInt("updates", counts.updates)
+            .putInt("same", counts.same)
+            .putInt("failed", counts.failed)
             .putString("summary", summary)
+        if (phase == CheckPhase.RUNNING) edit.putString("process", batchProcessId)
+        else edit.remove("process")
         if (phase == CheckPhase.COMPLETE) edit.putString("last-complete", summary)
         edit.commit()
+    }
+
+    private fun recoverInterrupted() {
+        if (prefs.getInt("schema",0) < 2 ||
+            prefs.getString("phase","") != CheckPhase.RUNNING.name ||
+            prefs.getString("process","") == batchProcessId) return
+        val method=runCatching {
+            CheckMethod.valueOf(prefs.getString("method",CheckMethod.MANUAL.name).orEmpty())
+        }.getOrDefault(CheckMethod.MANUAL)
+        val counts=BatchCounts(
+            prefs.getInt("total",0),
+            prefs.getInt("checked",0),
+            prefs.getInt("ok",0),
+            prefs.getInt("updates",0),
+            prefs.getInt("same",0),
+            prefs.getInt("failed",0)
+        )
+        val now=System.currentTimeMillis()
+        val summary=formatBatchResult(method,CheckPhase.INTERRUPTED,StoreTime.local(now),counts,
+            "前回処理はプロセス終了により中断しました。登録・履歴・保存APKは保持しています。",
+            prefs.getString("last-complete",null).orEmpty())
+        prefs.edit().putString("phase",CheckPhase.INTERRUPTED.name).putLong("finished",now)
+            .remove("process").putString("summary",summary).commit()
     }
 
     internal fun progress(run: BatchRun) = save(run, CheckPhase.RUNNING)

@@ -32,6 +32,27 @@ class AutoUpdateFlowTest {
             assertTrue(repeated.length < current.length + 100)
         } finally { prefs.edit().clear().commit() }
     }
+    @Test fun runningBatchFromDeadProcessRecoversAsInterrupted() {
+        val prefs=context.getSharedPreferences("batch-result",android.content.Context.MODE_PRIVATE)
+        prefs.edit().clear()
+            .putInt("schema",2)
+            .putString("phase",CheckPhase.RUNNING.name)
+            .putString("method",CheckMethod.MANUAL.name)
+            .putString("process","dead-process")
+            .putInt("total",7).putInt("checked",3).putInt("ok",2)
+            .putInt("updates",1).putInt("same",1).putInt("failed",1)
+            .putString("last-complete","手動確認 · 完了 · previous")
+            .putString("summary","手動確認 · 確認中 3/7").commit()
+        try {
+            val display=BatchResults(context).display()!!
+            assertTrue(display.contains("手動確認 · 未完了"))
+            assertTrue(display.contains("成功 2（更新 1・同一 1）／失敗 1"))
+            assertTrue(display.contains("プロセス終了により中断"))
+            assertTrue(display.contains("前回の確認結果 · 手動確認 · 完了 · previous"))
+            assertEquals(CheckPhase.INTERRUPTED.name,prefs.getString("phase",null))
+            assertFalse(prefs.contains("process"))
+        } finally { prefs.edit().clear().commit() }
+    }
     @Test fun archiveSdkAndActualInstalledVersionOnOldAndNewAndroid() {
         val file=File(context.applicationInfo.sourceDir)
         val archive=Installation.describe(context,file)
@@ -111,6 +132,33 @@ class AutoUpdateFlowTest {
                 }; fail("Expected policy abort")
             } catch (_: ImportFailure) {}
             assertNull(SavedShelf(context).candidate(repo,a))
+            assertTrue(File(context.cacheDir,"store-imports").listFiles().orEmpty().isEmpty())
+        } finally { cat.remove(repo) }
+    }
+    @Test fun automaticInspectionGuardStopsTransferAndLeavesNoMetadata() {
+        val cat=Catalog(context); val repo="update-fixture/inspection-policy"; cat.remove(repo)
+        val source=File(context.applicationInfo.sourceDir)
+        val asset=ReleaseApk(781,"inspect.apk",source.length(),null)
+        var guards=0
+        val api=GitHubReleases(SessionAuth()) { url -> object : HttpURLConnection(url) {
+            override fun getResponseCode()=200
+            override fun getInputStream(): java.io.InputStream {
+                if(url.path.endsWith("/assets/781")) return source.inputStream()
+                return """[{"id":1,"tag_name":"fixture","published_at":"2026-01-01T00:00:00Z","assets":[{"id":781,"name":"inspect.apk","size":${source.length()}}]}]""".byteInputStream()
+            }
+            override fun disconnect() {}
+            override fun connect() {}
+            override fun usingProxy()=false
+        } }
+        try {
+            val r=cat.register(null,repo,true)
+            StoreService(context,cat,api).refresh(r,inspectApks=true) {
+                if(++guards>3) throw UpdateDeferred("fixture Wi-Fi lost")
+            }
+            val saved=cat.get(repo)!!
+            assertTrue(guards>3)
+            assertFalse(saved.inspected.containsKey(asset.identity()))
+            assertTrue(saved.error.contains("保留"))
             assertTrue(File(context.cacheDir,"store-imports").listFiles().orEmpty().isEmpty())
         } finally { cat.remove(repo) }
     }

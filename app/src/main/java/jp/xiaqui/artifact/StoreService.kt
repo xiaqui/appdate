@@ -36,14 +36,14 @@ internal class StoreService(private val context: Context, val catalog: Catalog,
         } finally { staged.delete() }
     }
 
-    fun refresh(r: Registration, inspectApks: Boolean = true) {
+    fun refresh(r: Registration, inspectApks: Boolean = true, inspectAllowed: () -> Unit = {}) {
         try {
             val history = api.history(r.link)
             val known = r.inspected.toMutableMap()
             val latest = history.firstOrNull { r.previews || !it.preview }
             val errors = mutableListOf<String>()
             if (inspectApks) for (a in latest?.assets.orEmpty().filter { it.identity() !in known }.take(4)) {
-                try { known[a.identity()] = fetch(r, a) { _, meta -> meta } }
+                try { known[a.identity()] = fetch(r, a, inspectAllowed) { _, meta -> meta } }
                 catch (e: Exception) {
                     if (e is InterruptedException) throw e
                     errors += "${a.name}: ${storeError(e)}"

@@ -59,6 +59,10 @@ class AutoUpdateTest {
         assertTrue(downloadAllowed(NetworkState(true,false),true,true))
         assertTrue(downloadAllowed(NetworkState(true,true),true,false))
         assertFalse(downloadAllowed(NetworkState(false,false),false,true))
+        assertTrue(automaticInspectionAllowed(true,NetworkState(true,true)))
+        assertFalse(automaticInspectionAllowed(false,NetworkState(true,true)))
+        assertFalse(automaticInspectionAllowed(true,NetworkState(true,false)))
+        assertFalse(automaticInspectionAllowed(true,NetworkState(false,false)))
     }
     @Test fun independentSwitchMigrationPreservesExplicitLegacyOffs() {
         assertEquals(AutoPreferences(true,false,true),migrateAutoPreferences(paused=false,download=true))
