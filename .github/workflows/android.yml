@@ -15,6 +15,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -62,6 +64,61 @@ jobs:
           stat -c '%s bytes' "$apk"
           cp "$apk" ReleaseStore-preview.apk
           { echo "$GITHUB_SHA"; sha256sum ReleaseStore-preview.apk; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Reject reused or decreasing APK versionCode across published Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          import tempfile
+          from pathlib import Path
+
+          apk = Path("app/build/outputs/apk/debug/app-debug.apk")
+          aapt = str(Path(os.environ["ANDROID_HOME"]) / "build-tools/35.0.0/aapt")
+          def metadata(path):
+              output = subprocess.check_output([aapt, "dump", "badging", str(path)], text=True)
+              import re
+              match = re.search(r"^package: name='([^']+)' versionCode='([0-9]+)' versionName='([^']*)'", output, re.M)
+              if not match:
+                  raise RuntimeError(f"Cannot read APK package metadata: {path}")
+              return match.group(1), int(match.group(2)), match.group(3)
+
+          current_id, current_code, current_name = metadata(apk)
+          current_hash = hashlib.sha256(apk.read_bytes()).hexdigest()
+          repo = os.environ["GITHUB_REPOSITORY"]
+          releases = json.loads(subprocess.check_output(
+              ["gh", "api", f"repos/{repo}/releases?per_page=100"], text=True))
+          with tempfile.TemporaryDirectory() as tmp:
+              for release in releases:
+                  if release.get("draft"):
+                      continue
+                  for asset in release.get("assets", []):
+                      if not asset["name"].lower().endswith(".apk"):
+                          continue
+                      dest = Path(tmp) / "prior.apk"
+                      with dest.open("wb") as out:
+                          subprocess.run(
+                              ["gh", "api", "-H", "Accept: application/octet-stream",
+                               f"repos/{repo}/releases/assets/{asset['id']}"],
+                              stdout=out, check=True)
+                      prior_hash = hashlib.sha256(dest.read_bytes()).hexdigest()
+                      prior_id, prior_code, prior_name = metadata(dest)
+                      if prior_id != current_id or prior_hash == current_hash:
+                          continue
+                      if current_code <= prior_code:
+                          raise SystemExit(
+                              f"Refusing delivery: {current_id} {current_name} "
+                              f"(versionCode {current_code}) differs from published "
+                              f"{release['tag_name']}/{asset['name']} "
+                              f"({prior_name}, versionCode {prior_code}). "
+                              "Increment versionCode and versionName before delivery.")
+          print(f"Version gate passed: {current_id} {current_name} ({current_code})")
+          PY
       - uses: actions/upload-artifact@v7
         with:
           path: ReleaseStore-preview.apk
