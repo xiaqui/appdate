@@ -19,7 +19,7 @@ repo="$GITHUB_REPOSITORY"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 cd "$tmp"
-gh release download "$preview" -R "$repo" -p ReleaseStore-preview.apk -O "$apk"
+gh release download "$preview" -R "$repo" -p "ReleaseStore-v${version}-preview.apk" -O "$apk"
 test "$(stat -c %s "$apk")" = "$size"
 echo "$hash  $apk" | sha256sum -c
 bt="$ANDROID_HOME/build-tools/35.0.0"
