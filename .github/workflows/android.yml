@@ -5,7 +5,7 @@ on:
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
-  # Preview delivery requires a deliberate [publish-preview] commit or manual dispatch.
+  # Preview delivery requires a deliberate [publish-preview] commit or manual dispatch after all gates.
   workflow_dispatch:
     inputs:
       reuse_run_id:
