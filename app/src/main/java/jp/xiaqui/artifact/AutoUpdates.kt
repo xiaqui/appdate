@@ -161,7 +161,7 @@ internal object AutoUpdates {
                 val successBefore=success; val failuresBefore=failures; val heldBefore=held
                 if(!manual) service.refresh(initial)
                 val r=catalog.get(repo)
-                if (!unchangedRegistration(initial, r)) {
+                if (r == null || !unchangedRegistration(initial, r)) {
                     failures++; inspected++
                     if (!manual) batchRun?.record(null)
                     prefs.edit().putString("repo:$repo","登録が確認中に変更されました。")
