@@ -60,7 +60,7 @@ jobs:
           grep -E "^(package:|sdkVersion:|targetSdkVersion:)" "$RUNNER_TEMP/badging"
           grep -Fx "sdkVersion:'23'" "$RUNNER_TEMP/badging"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          grep -F "package: name='jp.xiaqui.artifact.store.preview' versionCode='12' versionName='0.8.0'" "$RUNNER_TEMP/badging"
+          grep -F "package: name='jp.xiaqui.artifact.store.preview' versionCode='13' versionName='0.8.1'" "$RUNNER_TEMP/badging"
           stat -c '%s bytes' "$apk"
           cp "$apk" ReleaseStore-preview.apk
           { echo "$GITHUB_SHA"; sha256sum ReleaseStore-preview.apk; } >> "$GITHUB_STEP_SUMMARY"
@@ -101,11 +101,10 @@ jobs:
                       if not asset["name"].lower().endswith(".apk"):
                           continue
                       dest = Path(tmp) / "prior.apk"
-                      with dest.open("wb") as out:
-                          subprocess.run(
-                              ["gh", "api", "-H", "Accept: application/octet-stream",
-                               f"repos/{repo}/releases/assets/{asset['id']}"],
-                              stdout=out, check=True)
+                      subprocess.run(
+                          ["gh", "release", "download", release["tag_name"],
+                           "--repo", repo, "--pattern", asset["name"],
+                           "--output", str(dest)], check=True)
                       prior_hash = hashlib.sha256(dest.read_bytes()).hexdigest()
                       prior_id, prior_code, prior_name = metadata(dest)
                       if prior_id != current_id or prior_hash == current_hash:
@@ -187,21 +186,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          apk=delivery/ReleaseStore-v0.8.0-preview.apk
+          apk=delivery/ReleaseStore-v0.8.1-preview.apk
           mv delivery/ReleaseStore-preview.apk "$apk"
           export PREVIEW_TAG="store-preview-${GITHUB_SHA:0:12}"
           export PREVIEW_SOURCE="$GITHUB_SHA"
           sha=$(sha256sum "$apk" | cut -d' ' -f1)
           state=$(python .github/release/check-preview.py)
           if [[ "$state" == absent ]]; then
-            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title 'AppDate 0.8.0 · automatic updates' --notes "PR #6 automatic-update preview 0.8.0 (12), including Issue #8 independent switches. Source: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. Device acceptance pending; not for silent installation. Issue #9, pull-to-refresh, naming overhaul and UI redesign are not included."
+            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title 'AppDate 0.8.1 · automatic updates' --notes "PR #6 automatic-update preview 0.8.1 (13), including Issue #8 independent switches. Source: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. Device acceptance pending; not for silent installation. Issue #9, pull-to-refresh, naming overhaul and UI redesign are not included."
           fi
-          if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PREVIEW_TAG" --jq '.assets[].name' | grep -Fxq ReleaseStore-v0.8.0-preview.apk; then
+          if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PREVIEW_TAG" --jq '.assets[].name' | grep -Fxq ReleaseStore-v0.8.1-preview.apk; then
             gh release upload "$PREVIEW_TAG" "$apk" -R "$GITHUB_REPOSITORY"
           fi
           mkdir -p verify
-          gh release download "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --pattern ReleaseStore-v0.8.0-preview.apk --dir verify
-          cmp "$apk" verify/ReleaseStore-v0.8.0-preview.apk
+          gh release download "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --pattern ReleaseStore-v0.8.1-preview.apk --dir verify
+          cmp "$apk" verify/ReleaseStore-v0.8.1-preview.apk
           python .github/release/check-preview.py
           gh release edit "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
           python .github/release/check-preview.py --published
