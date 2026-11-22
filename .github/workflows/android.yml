@@ -1,6 +1,7 @@
 name: Personal Release Store
 on:
   push:
+    # Keep this trigger and the reuse query on the same TASK branch.
     branches: ['work/startup-refresh-summary']
     paths-ignore:
       - '**/*.md'
