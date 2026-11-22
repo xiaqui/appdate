@@ -230,6 +230,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   device:
+    # Source-identical API 23/29/34 results are reused only after the reuse job verifies their test identity.
     needs: [verify, reuse]
     if: always() && (needs.verify.result == 'success' || needs.reuse.result == 'success') && needs.reuse.outputs.device_reused != 'true'
     strategy:
