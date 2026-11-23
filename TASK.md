@@ -158,3 +158,15 @@
 - **後続独立タスク**：アプリ表示名/APKをAppDateに統一（packageNameと署名は変更しない）。配布元はGitHub repository ID、アプリはAndroid packageName、配布物はRelease/Asset IDという3層管理へ安全に移行する。
 
 社長への指示は原則「TASKに従って完走」の一言でよい。別タスクへ移るときは、本書の「現在のWork実行対象」を明示的に差し替え、古いタスクを誤って再実行しない。
+
+## セキュリティ調査対応TODO（2026-11-23、現行PR #12の対象外）
+
+社長の横断調査結果に基づく**次回以降の独立タスク候補**。現在のWork実行対象（PR #12の起動時確認/集計/CI効率化）には追加しない。既存の認証、保存APK、署名、release、Actionsの検証実績を維持する。個別の脆弱性が実証されたと断定せず、まず現行コード・workflow・GitHub設定を確認する。
+
+- [ ] **高優先：mainと署名対象branchの保護**。ipmsg・overlay・appdate・market-weatherの四repoでbranch protection/rulesetsを確認。AppDateのmainと署名・preview deliveryに使用する実際のrefsを特定し、必要なレビュー・CI・force push/branch削除制限・workflow変更の承認を設定する。WorkのPR検収用previewを必要以上に止めない設計とし、Settingsでの設定は明示権限・GitHubプラン可用性を確認して別実施。
+- [ ] **高優先：署名実行範囲を限定**。PR・任意branch・fork・pull_request_target・workflow_run・workflow_dispatch・reusable jobの信頼境界を調査し、固定署名用Secretsを持つjobが任意の未信頼コードを実行しないようイベント/ref/権限・environmentを限定する。通常の単体/デバイスCIを維持し、検収用preview配布経路は信頼できる承認境界を経て実行。鍵/トークンをログやArtifactへ出さない。
+- [ ] **P1：一般配布を非debug化**。現行のDebug variantを前提とする署名・リリース経路の実情を確認し、一般配布だけrelease variantへ移行する。Preview/実機検収と正式版の**同一APKバイナリ昇格**・versionCode単調増加・既存署名・package・データ保持・API23を維持する。Android debuggable/manifest/署名とAPK再ダウンロードhashを検証。単なる名称変更ではない。
+- [ ] **既存PRとの分離**：PR #12は現在のTASKに従って完走し、本項目は次の個別PR/承認タスクで扱う。Review/CI/端末検収前のmerge禁止と無用なReleaseを抑える規約は維持。
+
+**状態：TODO登録のみ。**
+
