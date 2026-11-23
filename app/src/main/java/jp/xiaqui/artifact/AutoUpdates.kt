@@ -63,6 +63,30 @@ internal fun networkState(context: Context): NetworkState {
     return NetworkState(caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)==true,
         caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true)
 }
+
+// Diagnostic only: never infer that the active route is Wi-Fi from another network.
+// In particular, an active VPN may have TRANSPORT_VPN while Wi-Fi is available
+// underneath. Do not bypass the existing Wi-Fi-only download gate.
+internal fun networkDiagnostic(context: Context): String {
+    return try {
+        val manager=context.getSystemService(ConnectivityManager::class.java)
+        val active=manager.activeNetwork
+        val caps=manager.getNetworkCapabilities(active)
+        fun transports(c: NetworkCapabilities?): String {
+            if(c==null) return "none"
+            return listOf(
+                NetworkCapabilities.TRANSPORT_WIFI to "wifi",
+                NetworkCapabilities.TRANSPORT_CELLULAR to "cell",
+                NetworkCapabilities.TRANSPORT_VPN to "vpn",
+                NetworkCapabilities.TRANSPORT_ETHERNET to "ethernet"
+            ).filter { c.hasTransport(it.first) }.joinToString("+") { it.second }.ifEmpty { "other" }
+        }
+        val otherWifi=manager.allNetworks.any { n ->
+            n != active && manager.getNetworkCapabilities(n)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true
+        }
+        "active=${transports(caps)}, internet=${caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)==true}, otherWifi=$otherWifi"
+    } catch (_: Exception) { "network-state-unavailable" }
+}
 internal fun downloadAllowed(network: NetworkState, wifiOnly: Boolean, override: Boolean) = network.connected && (!wifiOnly || network.wifi || override)
 
 internal object AutoUpdates {
@@ -146,7 +170,7 @@ internal object AutoUpdates {
                             if (Thread.currentThread().isInterrupted || !enabled(settings,trigger)) throw InterruptedException()
                             if (!manual && !settings.downloadEnabled) throw UpdateDeferred("自動取得を停止しました。")
                             if(!downloadAllowed(networkState(context),true,override))
-                                throw UpdateDeferred("Wi-Fi待ち・通信切断のため取得を保留しました。")
+                                throw UpdateDeferred("Wi-Fi待ち・通信切断のため取得を保留しました（${networkDiagnostic(context)}）。")
                         }
                         when {
                             outcome=="取得成功" || outcome=="保存済み" -> success++
