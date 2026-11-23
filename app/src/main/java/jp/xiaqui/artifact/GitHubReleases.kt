@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -12,6 +13,21 @@ import java.security.MessageDigest
 
 internal data class ReleaseItem(val id: Long, val tag: String)
 internal data class ReleaseApk(val id: Long, val name: String, val size: Long, val digest: String?, val updated: String = "")
+
+internal class AssetConnectionFailure(stage: String, cause: IOException) : IOException(
+    "APK通信失敗（$stage・" + when (cause) {
+        is javax.net.ssl.SSLException -> "TLS"
+        is java.net.UnknownHostException -> "DNS"
+        is java.net.SocketTimeoutException -> "タイムアウト"
+        else -> "I/O"
+    } + "）。", cause
+)
+
+private inline fun <T> assetNetworkOperation(stage: String, operation: () -> T): T = try {
+    operation()
+} catch (e: IOException) {
+    throw AssetConnectionFailure(stage, e)
+}
 
 internal class GitHubReleases(private val auth: ReleaseAuth,
     private val connect: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }) {
@@ -23,7 +39,8 @@ internal class GitHubReleases(private val auth: ReleaseAuth,
         var common: String? = null
         while (hop <= 5) {
             if (Thread.currentThread().isInterrupted) throw InterruptedException()
-            val connection = connect(url)
+            val assetStage = if (hop == 0) "Release Asset本体" else "APK転送先"
+            val connection = if (binary) assetNetworkOperation(assetStage) { connect(url) } else connect(url)
             try {
                 connection.instanceFollowRedirects = false
                 connection.connectTimeout = 10000
@@ -35,8 +52,20 @@ internal class GitHubReleases(private val auth: ReleaseAuth,
                     connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
                 }
                 connection.setRequestProperty("Accept", if (binary) "application/octet-stream" else "application/vnd.github+json")
-                when (val status = connection.responseCode) {
-                    200 -> return connection.inputStream.use(consume)
+                val status = if (binary) assetNetworkOperation(assetStage) { connection.responseCode }
+                    else connection.responseCode
+                when (status) {
+                    200 -> {
+                        if (!binary) return connection.inputStream.use(consume)
+                        val input = assetNetworkOperation("$assetStage・本文") { connection.inputStream }
+                        val stream = object : java.io.FilterInputStream(input) {
+                            override fun read(b: ByteArray, off: Int, len: Int): Int =
+                                assetNetworkOperation("$assetStage・本文") { super.read(b, off, len) }
+                            override fun read(): Int =
+                                assetNetworkOperation("$assetStage・本文") { super.read() }
+                        }
+                        return stream.use(consume)
+                    }
                     301, 302, 303, 307, 308 -> {
                         if (!binary) throw ImportFailure("repo移転の同一性を追跡できません。新しい名前で別登録してください。旧登録・履歴は保持しています。")
                         val location = connection.getHeaderField("Location") ?: throw ImportFailure("転送先がありません。")
