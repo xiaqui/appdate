@@ -183,7 +183,9 @@ internal class StoreService(private val context: Context, val catalog: Catalog,
 
     private fun refreshSources(r: Registration, inspectApks: Boolean, inspectAllowed: () -> Unit) {
         var current = catalog.get(r.repo) ?: r
-        for (original in catalog.sources(current).filter { it.approved }.sortedBy { it.priority }) {
+        val keys = catalog.sources(current).filter { it.approved }.sortedBy { it.priority }.map { it.key }
+        for (key in keys) {
+            val original = catalog.sources(current).firstOrNull { it.key == key && it.approved } ?: continue
             var updated = original
             try {
                 var history = provider(original).history(original)

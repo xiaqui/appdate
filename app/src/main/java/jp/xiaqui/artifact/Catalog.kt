@@ -34,7 +34,7 @@ internal data class Registration(val repo: String, val previews: Boolean, val re
     val fetched: Long = 0, val error: String = "", val history: List<StoreRelease> = emptyList(),
     val inspected: Map<String, ApkInfo> = emptyMap(), val checked: Long = 0, val githubId: Long = 0,
     val sources: List<DistributionSource> = emptyList(), val sourceChoice: SourceChoice? = null,
-    val sourceNotice: String = "", val sourceSelectionCurrent: Boolean = true) {
+    val sourceNotice: String = "", val sourceSelectionCurrent: Boolean = true, val refreshBaseRevision: String? = null) {
     val link get() = ReleaseLink(repo, null, null, true)
     val visible get() = history.filter { previews || !it.preview }
 }
@@ -109,7 +109,7 @@ internal object CatalogCodec {
             .put("history", histories).put("inspected", inspected).put("sources", sources)
             .put("sourceChoice", r.sourceChoice?.let { JSONObject().put("sourceKey", it.sourceKey)
                 .put("versionCode", it.versionCode).put("digest", it.digest) })
-            .put("sourceNotice", r.sourceNotice).put("sourceSelectionCurrent", r.sourceSelectionCurrent).toString()
+            .put("sourceNotice", r.sourceNotice).put("sourceSelectionCurrent", r.sourceSelectionCurrent).put("refreshBaseRevision", r.refreshBaseRevision).toString()
     }
     fun decode(raw: String): Registration {
         val j = JSONObject(raw)
@@ -126,7 +126,7 @@ internal object CatalogCodec {
                     sourceInspected.keys().asSequence().associateWith { metadata(sourceInspected.getJSONObject(it)) })
             }.orEmpty(), j.optJSONObject("sourceChoice")?.let { choice -> SourceChoice(
                 choice.getString("sourceKey"), choice.getLong("versionCode"), choice.getString("digest")) },
-            j.optString("sourceNotice"), j.optBoolean("sourceSelectionCurrent", true))
+            j.optString("sourceNotice"), j.optBoolean("sourceSelectionCurrent", true), j.optString("refreshBaseRevision").takeIf { it.isNotEmpty() })
     }
 }
 
@@ -173,13 +173,20 @@ internal class Catalog(context: Context) {
             else -> ""
         }
         return current.copy(
-            revision = UUID.randomUUID().toString(), sources = rows,
+            revision = UUID.randomUUID().toString(), refreshBaseRevision = null, sources = rows,
             history = selected?.let { candidate -> listOf(candidate.release) +
                 candidate.source.history.filter { it.id != candidate.release.id } } ?: current.history,
             inspected = selected?.source?.inspected ?: current.inspected,
             fetched = rows.maxOfOrNull { it.fetched } ?: current.fetched,
             checked = rows.maxOfOrNull { it.checked } ?: current.checked,
-            error = error, sourceChoice = choice?.takeIf { resolved.explicitChoice },
+            error = error, sourceChoice = choice?.takeIf { saved ->
+                val candidates = sourceCandidates(rows, current.previews)
+                val chosen = candidates.firstOrNull { it.source.key == saved.sourceKey }
+                rows.any { it.approved && it.key == saved.sourceKey } &&
+                    candidates.none { it.info.code > saved.versionCode } &&
+                    (chosen == null || (chosen.info.code == saved.versionCode &&
+                        chosen.asset.digest?.equals(saved.digest, true) != false))
+            },
             sourceNotice = resolved.notice, sourceSelectionCurrent = selected != null
         )
     }
@@ -223,10 +230,14 @@ internal class Catalog(context: Context) {
 
     fun replaceSourceState(r: Registration, source: DistributionSource): Registration = synchronized(lock) {
         val current = get(r.repo) ?: throw ImportFailure("登録が変更されました。再試行してください。")
+        val prior = sources(r).firstOrNull { it.key == source.key } ?: return@synchronized current
+        val latest = sources(current).firstOrNull { it.key == source.key } ?: return@synchronized current
+        if (latest.copy(priority = prior.priority, approved = prior.approved) != prior) return@synchronized current
         val rows = sources(current).map { existing -> if (existing.key == source.key) existing.copy(
             fetched = source.fetched, checked = source.checked, error = source.error,
             history = source.history, inspected = source.inspected) else existing }
-        val updated = aggregate(current, rows, current.sourceChoice)
+        val updated = aggregate(current, rows, current.sourceChoice).copy(
+            refreshBaseRevision = current.refreshBaseRevision ?: current.revision)
         if (!prefs.edit().putString(current.repo, CatalogCodec.encode(updated)).commit())
             throw ImportFailure("配布元の確認結果を保存できません。以前の結果は保持しています。")
         updated
@@ -246,7 +257,7 @@ internal class Catalog(context: Context) {
         val current = get(r.repo) ?: throw ImportFailure("登録が変更されました。開き直してください。")
         if (current.revision != r.revision) throw ImportFailure("登録が確認中に変更されました。開き直してください。")
         val candidates = sourceConflictCandidates(sources(current), current.previews)
-        val selected = candidates.firstOrNull { it.source.key == sourceKey }
+        val selected = candidates.firstOrNull { it.source.key == sourceKey && it.source.error.isEmpty() }
             ?: throw ImportFailure("競合候補が変わりました。更新確認をやり直してください。")
         val digest = selected.asset.digest?.takeIf { it.length == 64 }
             ?: throw ImportFailure("APK内容を確認できない候補は選択できません。APK情報を再確認してください。")
@@ -254,7 +265,7 @@ internal class Catalog(context: Context) {
         val resolved = resolveSources(sources(current), current.previews, choice)
         val chosen = resolved.selected?.takeIf { resolved.explicitChoice }
             ?: throw ImportFailure("競合候補を安全に選択できません。更新確認をやり直してください。")
-        val updated = current.copy(revision = UUID.randomUUID().toString(), sourceChoice = choice,
+        val updated = current.copy(revision = UUID.randomUUID().toString(), refreshBaseRevision = null, sourceChoice = choice,
             history = listOf(chosen.release) + chosen.source.history.filter { it.id != chosen.release.id },
             inspected = chosen.source.inspected, error = "", sourceNotice = resolved.notice,
             sourceSelectionCurrent = true)
@@ -330,7 +341,7 @@ internal class Catalog(context: Context) {
         if (current?.revision != r.revision) throw ImportFailure("確認中に登録が変わりました。編集を開き直してください。")
         if (get(name) != null && name != r.repo) throw ImportFailure("変更先は登録済みです。双方を保持しました。保存内容を確認して重複登録を手動で解決してください。")
         if (canonical(name) != name && canonical(name) != r.repo) throw ImportFailure("変更先は他の改名履歴と衝突しています。双方を保持しました。")
-        val updated = current.copy(repo = name, githubId = id, previews = previews, revision = UUID.randomUUID().toString())
+        val updated = current.copy(repo = name, githubId = id, previews = previews, revision = UUID.randomUUID().toString(), refreshBaseRevision = null)
         val aliases = JSONObject(prefs.getString("@aliases", "{}")!!)
         aliases.keys().asSequence().toList().forEach { key -> if (aliases.getString(key) == r.repo) aliases.put(key, name) }
         aliases.remove(name)
@@ -353,7 +364,7 @@ internal class Catalog(context: Context) {
         if (repo != old && get(repo) != null) throw ImportFailure("登録済みのリポジトリです。")
         val prior = if (repo == old) get(repo) else null
         val revision = UUID.randomUUID().toString()
-        val result = prior?.copy(previews = previews, revision = revision) ?: Registration(repo, previews, revision, githubId = identity)
+        val result = prior?.copy(previews = previews, revision = revision, refreshBaseRevision = null) ?: Registration(repo, previews, revision, githubId = identity)
         val change = prefs.edit()
         if (old != null && old != repo) change.remove(old)
         if (!change.putString(repo, CatalogCodec.encode(result)).commit()) throw ImportFailure("登録を保存できません。")

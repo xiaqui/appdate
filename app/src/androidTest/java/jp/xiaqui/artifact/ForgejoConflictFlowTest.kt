@@ -43,6 +43,14 @@ class ForgejoConflictFlowTest {
             assertEquals(listOf(forge.key, github.key), catalog.sources(registration)
                 .sortedBy { it.priority }.map { it.key })
 
+            val beforeRefresh = registration
+            registration = catalog.replaceSourceState(registration, forge.copy(inspected = emptyMap()))
+            assertTrue(!registration.sourceSelectionCurrent)
+            assertEquals(github.key, registration.sourceChoice!!.sourceKey)
+            registration = catalog.replaceSourceState(registration, forge)
+            assertTrue(registration.sourceSelectionCurrent)
+            assertTrue(unchangedRegistration(beforeRefresh, registration))
+
             val staleSnapshot = registration
             registration = catalog.reorderSources(registration, listOf(github.key, forge.key))
             registration = catalog.replaceSourceState(staleSnapshot, forge.copy(error = "temporary"))
@@ -52,6 +60,8 @@ class ForgejoConflictFlowTest {
             assertTrue(registration.sourceNotice.contains("確認失敗"))
             assertTrue(registration.error.isEmpty())
 
+            assertTrue(!unchangedRegistration(staleSnapshot, registration))
+            registration = catalog.replaceSourceState(registration, forge)
             registration = catalog.removeSource(registration, github.key)
             assertEquals(forge.key, registration.history.first().sourceKey)
             assertTrue(registration.inspected.isNotEmpty())

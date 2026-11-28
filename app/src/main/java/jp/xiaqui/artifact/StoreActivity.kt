@@ -309,7 +309,9 @@ class StoreActivity : Activity() {
                         val digest = candidate.asset.digest
                         val selectedChoice = r.sourceChoice?.let { it.sourceKey == candidate.source.key &&
                             it.versionCode == candidate.info.code && digest?.equals(it.digest, true) == true } == true
-                        if (digest.isNullOrBlank()) {
+                        if (candidate.source.error.isNotEmpty()) {
+                            label("$provider · ${candidate.source.repository} · 今回の確認に失敗（選択不可）")
+                        } else if (digest.isNullOrBlank()) {
                             label("$provider · ${candidate.source.repository} · versionCode ${candidate.info.code}\nSHA-256未確認（選択不可）")
                         } else button("${if (selectedChoice) "選択済み：" else "この版を選択："}$provider · ${candidate.source.repository}\nversionCode ${candidate.info.code} · SHA-256 ${digest.take(12)}…") {
                             AlertDialog.Builder(this).setMessage(

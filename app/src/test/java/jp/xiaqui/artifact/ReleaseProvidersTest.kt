@@ -28,10 +28,12 @@ class ReleaseProvidersTest {
 
     @Test fun maximumVersionWinsAndPriorityOnlyBreaksVerifiedEqualVersionTies() {
         val primaryOld = source("forge", 0, code = 1)
-        val backupNew = source("gh", 1, code = 2, error = "temporary")
+        val backupNew = source("gh", 1, code = 2)
         assertEquals("gh", resolveSources(listOf(primaryOld, backupNew), false).selected!!.source.key)
         val same = source("gh", 1, code = 1)
         assertEquals("forge", resolveSources(listOf(primaryOld, same), false).selected!!.source.key)
+        assertNull(resolveSources(listOf(primaryOld, backupNew.copy(error = "offline")), false).selected)
+        assertEquals("gh", resolveSources(listOf(primaryOld.copy(error = "offline"), same), false).selected!!.source.key)
         val restored = primaryOld.copy(error = "")
         assertEquals("forge", resolveSources(listOf(restored, same), false).selected!!.source.key)
     }
@@ -51,6 +53,11 @@ class ReleaseProvidersTest {
         assertTrue(resolved.explicitChoice)
         assertEquals(0, forge.priority)
         assertEquals(1, github.priority)
+
+        val mirror = source("mirror", 2, code = 7, digest = "b".repeat(64))
+        val fallback = resolveSources(listOf(forge, github.copy(error = "offline"), mirror), false, choice)
+        assertEquals("mirror", fallback.selected!!.source.key)
+        assertTrue(fallback.explicitChoice)
 
         val changedAsset = github.history.single().assets.single().copy(digest = "c".repeat(64))
         val changedGithub = github.copy(
@@ -92,8 +99,8 @@ class ReleaseProvidersTest {
         assertEquals("gh", available.selected!!.source.key)
         assertTrue(available.notice.contains("対象APKなし"))
 
-        val emptyFailure = failed.copy(history = emptyList(), inspected = emptyMap())
-        val onlyNoApk = resolveSources(listOf(emptyFailure, noApk), false)
+        assertNull(resolveSources(listOf(failed, known.copy(error = "offline")), false).selected)
+        val onlyNoApk = resolveSources(listOf(failed, noApk), false)
         assertNull(onlyNoApk.selected)
         assertTrue(onlyNoApk.notice.contains("確認失敗"))
         assertTrue(onlyNoApk.notice.contains("対象APKなし"))

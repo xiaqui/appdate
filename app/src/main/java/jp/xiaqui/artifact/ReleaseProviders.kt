@@ -198,9 +198,10 @@ internal fun resolveSources(sources: List<DistributionSource>, previews: Boolean
     }
     val failed = approved.count { it.error.isNotEmpty() }
     val notice = when {
-        failed > 0 && candidates.isNotEmpty() -> "一部配布元は確認失敗。確認済み候補を使用しています（失敗 $failed）。"
-        failed > 0 && candidates.isEmpty() && noApk + failed == approved.size ->
+        failed == approved.size && failed > 0 -> "全配布元の確認失敗。前回のアプリ情報を保持しています。"
+        failed > 0 && noApk + failed == approved.size ->
             "一部配布元は確認失敗、確認成功した配布元は今回の対象APKなし。前回のアプリ情報を保持しています。"
+        failed > 0 -> "一部配布元は確認失敗（失敗 $failed）。"
         noApk > 0 && candidates.isNotEmpty() -> "一部配布元は今回の対象APKなし（$noApk）。"
         noApk == approved.size && approved.isNotEmpty() && failed == 0 -> "全配布元の確認成功・今回の対象APKなし。前回のアプリ情報を保持しています。"
         else -> ""
@@ -220,13 +221,17 @@ internal fun resolveSources(sources: List<DistributionSource>, previews: Boolean
             candidate.source.key == saved.sourceKey && candidate.info.code == saved.versionCode &&
                 candidate.asset.digest?.equals(saved.digest, true) == true
         } }
-        if (chosen != null) return SourceResolution(chosen,
-            partial = failed > 0, explicitChoice = true, notice = notice)
+        if (chosen != null) {
+            val available = chosen.takeIf { it.source.error.isEmpty() } ?: latest.filter {
+                it.source.error.isEmpty() && it.asset.digest.equals(chosen.asset.digest, true)
+            }.minByOrNull { it.source.priority }
+            return SourceResolution(available, partial = failed > 0, explicitChoice = true, notice = notice)
+        }
         val reason = if (digests.any { it.isNullOrBlank() }) "SHA-256未確認" else "SHA-256不一致"
         return SourceResolution(null, "同じversionCodeのAPKが競合しています（$reason）。候補を明示選択するまで自動取得を停止しました。",
             partial = failed > 0, notice = notice)
     }
-    return SourceResolution(latest.minBy { it.source.priority }, partial = failed > 0, notice = notice)
+    return SourceResolution(latest.filter { it.source.error.isEmpty() }.minByOrNull { it.source.priority }, partial = failed > 0, notice = notice)
 }
 
 internal data class ForgejoRepoPage(val repos: List<RemoteRepo>, val more: Boolean)

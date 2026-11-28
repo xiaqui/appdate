@@ -58,7 +58,8 @@ internal fun approvedManualCandidates(rows: List<Registration>, approved: Map<St
 }
 
 internal fun unchangedRegistration(initial: Registration, current: Registration?) =
-    current != null && current.revision == initial.revision
+    current != null && (current.refreshBaseRevision ?: current.revision) ==
+        (initial.refreshBaseRevision ?: initial.revision)
 
 internal data class NetworkState(val connected: Boolean, val wifi: Boolean)
 internal fun networkState(context: Context): NetworkState {
@@ -238,7 +239,7 @@ internal object AutoUpdates {
                     }
                 }
                 val final=catalog.get(repo)
-                if (!unchangedRegistration(initial, final)) {
+                if (r.revision != final?.revision) {
                     success=successBefore; held=heldBefore; failures=failuresBefore+1
                     outcome="登録が確認中に変更されました。"
                     if (!manual) batchRun?.record(null)
