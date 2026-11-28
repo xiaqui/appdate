@@ -18,6 +18,10 @@ internal data class ForgejoDiscoveryReport(val candidates: List<ForgejoCandidate
     val summary get() = "Forgejo repo取得 $fetched / 登録候補 ${candidates.size} / 保留 ${held.size}" +
         held.take(3).joinToString("") { "\n$it" }
 }
+internal data class ForgejoApprovalReport(val approved: List<Registration>, val failed: List<String>) {
+    val summary get() = "Forgejo配布元 ${approved.size} 件を承認・初回確認 / ${failed.size} 件を保留" +
+        failed.take(3).joinToString("") { "\n$it" }
+}
 internal class StoreService(private val context: Context, val catalog: Catalog,
     private val api: GitHubReleases = GitHubReleases(StoredAuth(context)),
     private val installed: (String) -> ApkInfo? = { Installation.installed(context,it) }) {
@@ -162,19 +166,19 @@ internal class StoreService(private val context: Context, val catalog: Catalog,
         return ForgejoCandidate(source, info, existing?.repo)
     }
 
-    fun approveForgejo(candidates: List<ForgejoCandidate>): List<Registration> {
+    fun approveForgejo(candidates: List<ForgejoCandidate>): ForgejoApprovalReport {
         val approved = mutableListOf<Registration>()
         val failed = mutableListOf<String>()
         candidates.forEach { candidate ->
+            if (Thread.currentThread().isInterrupted) throw InterruptedException()
             try {
                 val existing = candidate.existingRepo?.let(catalog::get)
                 approved += catalog.addSource(existing, candidate.source.copy(priority = 0, approved = true), candidate.info)
-            } catch (e: Exception) {
+            } catch (e: ImportFailure) {
                 failed += "${candidate.source.repository}: ${storeError(e)}"
             }
         }
-        if (failed.isNotEmpty()) throw ImportFailure("Forgejo配布元 ${approved.size} 件を承認済み / ${failed.size} 件を保留\n" + failed.joinToString("\n"))
-        return approved
+        return ForgejoApprovalReport(approved, failed)
     }
 
     private fun refreshSources(r: Registration, inspectApks: Boolean, inspectAllowed: () -> Unit) {

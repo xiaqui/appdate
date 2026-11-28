@@ -506,10 +506,13 @@ class StoreActivity : Activity() {
             .setPositiveButton("選択した候補を承認") { _, _ ->
                 val selectedCandidates = report.candidates.filterIndexed { index, _ -> checked[index] }
                 work("配布元を登録・初回確認中…", {
-                    val registrations = service.approveForgejo(selectedCandidates)
-                    registrations.distinctBy { it.repo }.forEach { service.refresh(catalog.get(it.repo) ?: it) }
-                    selectedCandidates.size
-                }) { count -> settings = false; selected = null; render(); notice("Forgejo配布元 $count 件を承認し、初回更新確認を完了しました。") }
+                    val approval = service.approveForgejo(selectedCandidates)
+                    approval.approved.distinctBy { it.repo }.forEach {
+                        if (Thread.currentThread().isInterrupted) throw InterruptedException()
+                        service.refresh(catalog.get(it.repo) ?: it)
+                    }
+                    approval
+                }) { approval -> settings = false; selected = null; render(); notice(approval.summary) }
             }.show()
     }
 
