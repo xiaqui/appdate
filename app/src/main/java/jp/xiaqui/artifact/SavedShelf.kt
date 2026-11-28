@@ -44,6 +44,16 @@ internal class SavedShelf(private val context: Context) {
                 catch (_: java.io.IOException) { false }
         }
 
+    fun verifiedAcrossSources(info: ApkInfo, digest: String?): File? = synchronized(lock) {
+        if (digest.isNullOrBlank()) return@synchronized null
+        dir.listFiles().orEmpty().firstOrNull { file ->
+            val r = record(file) ?: return@firstOrNull false
+            file.isFile && r.optString("package") == info.pkg && r.optString("signer") == info.signer &&
+                r.optLong("versionCode") == info.code && r.optString("sha256").equals(digest, true) &&
+                runCatching { hash(file).equals(digest, true) }.getOrDefault(false)
+        }
+    }
+
     fun save(staged: File, name: String, info: ApkInfo, source: String, repo: String? = null,
         tag: String? = null, asset: ReleaseApk? = null, automatic: Boolean = false): File = synchronized(lock) {
         val sha = hash(staged)

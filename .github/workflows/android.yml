@@ -1,7 +1,7 @@
 name: Personal Release Store
 on:
   push:
-    branches: ['work/startup-refresh-summary', 'fix/android7-wifi-diagnostics']
+    branches: ['work/startup-refresh-summary', 'fix/android7-wifi-diagnostics', 'work/forgejo-provider']
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -198,7 +198,7 @@ jobs:
             identity=$(jq -er .currentIdentity <<<"$spec")
             all_ok=true
             required_apis=(23 29 34)
-            if [[ "$GITHUB_REF_NAME" == fix/android7-wifi-diagnostics ]]; then
+            if [[ "$GITHUB_REF_NAME" == fix/android7-wifi-diagnostics || "$GITHUB_REF_NAME" == work/forgejo-provider ]]; then
               required_apis+=(24)
             fi
             for api in "${required_apis[@]}"; do
@@ -241,7 +241,7 @@ jobs:
       fail-fast: false
       matrix:
         # Routine CI covers Android 6, 10, and 14. Broader OS coverage is reserved for release checks.
-        api: ${{ fromJSON((inputs.full_matrix == true || contains(github.event.head_commit.message, '[full-matrix]')) && (github.ref_name == 'fix/android7-wifi-diagnostics' && '[23,24,29,30,31,33,34,35]' || '[23,29,30,31,33,34,35]') || (github.ref_name == 'fix/android7-wifi-diagnostics' && '[23,24,29,34]' || '[23,29,34]')) }}
+        api: ${{ fromJSON((inputs.full_matrix == true || contains(github.event.head_commit.message, '[full-matrix]')) && ((github.ref_name == 'fix/android7-wifi-diagnostics' || github.ref_name == 'work/forgejo-provider') && '[23,24,29,30,31,33,34,35]' || '[23,29,30,31,33,34,35]') || ((github.ref_name == 'fix/android7-wifi-diagnostics' || github.ref_name == 'work/forgejo-provider') && '[23,24,29,34]' || '[23,29,34]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -273,7 +273,7 @@ jobs:
 
   preview:
     needs: [verify, reuse, device]
-    if: always() && (needs.device.result == 'success' || needs.reuse.outputs.device_reused == 'true') && (needs.verify.result == 'success' || needs.reuse.result == 'success') && (github.ref == 'refs/heads/work/startup-refresh-summary' || github.ref == 'refs/heads/fix/android7-wifi-diagnostics') && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
+    if: always() && (needs.device.result == 'success' || needs.reuse.outputs.device_reused == 'true') && (needs.verify.result == 'success' || needs.reuse.result == 'success') && (github.ref == 'refs/heads/work/startup-refresh-summary' || github.ref == 'refs/heads/fix/android7-wifi-diagnostics' || github.ref == 'refs/heads/work/forgejo-provider') && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -300,6 +300,11 @@ jobs:
             test "$code" = 16
             title="Android 7 APK download diagnostics"
             details="PR #13 records the active network at Wi-Fi deferral and distinguishes APK API/redirect/body transport failures. On Z4T, install over the existing AppDate, leave automatic Wi-Fi download enabled, relaunch on the affected Wi-Fi, then capture the repository detail result. Compare with an explicit individual APK inspection on the same network."
+          elif [[ "$GITHUB_REF_NAME" == work/forgejo-provider ]]; then
+            test "$version" = 0.9.0
+            test "$code" = 17
+            title="GitHub and Forgejo multi-source preview"
+            details="Adds approved Forgejo connections, owner-scoped PAT discovery, explicit bulk approval, app identity by package and signer, version-first source selection, digest-gated fallback, and automatic recovery to the stored priority. Includes the accepted PR #12 startup summary and PR #13 Android 7 diagnostics as stacked dependencies."
           fi
           apk_source=$(jq -er .sourceSha delivery/manifest.json)
           export PREVIEW_SOURCE="$GITHUB_SHA"

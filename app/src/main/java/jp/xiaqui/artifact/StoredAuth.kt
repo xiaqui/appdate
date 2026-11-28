@@ -20,6 +20,9 @@ internal class StoredAuth(context: Context) : ReleaseAuth {
     override fun commonToken() = tokenFor(COMMON)
     fun useCommon(token: String) = use(COMMON, token)
     fun forgetCommon() = forget(COMMON)
+    fun tokenForSource(sourceKey: String) = readToken("@source:$sourceKey", false)
+    fun useSource(sourceKey: String, token: String) = use("@source:$sourceKey", token)
+    fun forgetSource(sourceKey: String) = forget("@source:$sourceKey")
     private fun store() = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
     private fun file(id: String) = AtomicFile(File(root, id))
     private fun create(id: String): SecretKey {
@@ -50,7 +53,7 @@ internal class StoredAuth(context: Context) : ReleaseAuth {
     }
 
     fun use(repo: String, token: String) = synchronized(lock) {
-        if (!Regex("[A-Za-z0-9_]{1,500}").matches(token)) throw ImportFailure("トークンを確認してください。")
+        if (!Regex("[A-Za-z0-9_-]{1,500}").matches(token)) throw ImportFailure("トークンを確認してください。")
         val id = alias(repo)
         try {
             if (!root.isDirectory && !root.mkdirs()) throw java.io.IOException()
