@@ -53,13 +53,17 @@ internal object TlsCompatibility {
             .joinToString("") { "%02x".format(it) }
         check(digest == ISRG_ROOT_X1_SHA256) { "Unexpected bundled TLS trust anchor" }
 
+        val contextWithAnchor = SSLContext.getInstance("TLS")
+        contextWithAnchor.init(null, arrayOf(CombinedX509TrustManager(system, trustManagerFor(certificate))), null)
+        return contextWithAnchor.socketFactory
+    }
+
+    internal fun trustManagerFor(certificate: X509Certificate): X509TrustManager {
         val store = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
             load(null)
-            setCertificateEntry("isrg-root-x1", certificate)
+            setCertificateEntry("appdate-bundled-anchor", certificate)
         }
-        val contextWithAnchor = SSLContext.getInstance("TLS")
-        contextWithAnchor.init(null, arrayOf(CombinedX509TrustManager(system, trustManager(store))), null)
-        return contextWithAnchor.socketFactory
+        return trustManager(store)
     }
 
     private fun trustManager(store: KeyStore?): X509TrustManager {
