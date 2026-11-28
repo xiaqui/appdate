@@ -44,6 +44,15 @@ class StoreTest {
         val uninspected = rowFor(r.copy(inspected=emptyMap()),true) { apk }
         assertEquals("APK要確認",uninspected.status)
         assertEquals("複数APK",multiple.status)
+        val knownSdk = apk.copy(sdk = ApkSdk(23, 35))
+        val noCurrent = rowFor(r.copy(inspected=mapOf(a.identity() to knownSdk),
+            sources=listOf(DistributionSource("source",PROVIDER_GITHUB,
+            "https://github.com",1,"o/r",0)), sourceSelectionCurrent=false,
+            sourceNotice="全配布元の確認成功・今回の対象APKなし。前回のアプリ情報を保持しています。"),true) { knownSdk }
+        assertEquals("配布なし", noCurrent.status)
+        assertTrue(noCurrent.versions.contains("前回"))
+        assertTrue(noCurrent.versions.contains("v9"))
+        assertTrue(noCurrent.name.contains(knownSdk.sdk.label))
         val legacy = org.json.JSONObject(CatalogCodec.encode(r)).apply { remove("checked") }
         assertEquals(0L,CatalogCodec.decode(legacy.toString()).checked)
     }

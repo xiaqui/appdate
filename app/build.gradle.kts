@@ -9,8 +9,8 @@ android {
         applicationId = "jp.xiaqui.artifact.store.preview"
         minSdk = 23
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.9.1"
+        versionCode = 19
+        versionName = "0.9.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

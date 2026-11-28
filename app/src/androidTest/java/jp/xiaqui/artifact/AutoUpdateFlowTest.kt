@@ -189,7 +189,15 @@ class AutoUpdateFlowTest {
         try {
             AutoSettings(context).prefs.edit().remove("notified").commit()
             AutoUpdates.publishReady(context,listOf(file to info))
-            val notification=manager.activeNotifications.single { it.id==42043 }.notification
+            // NotificationManager posts asynchronously on some API 29 emulator runs.  Wait for
+            // the requested ID instead of racing the system service immediately after notify().
+            val deadline=android.os.SystemClock.uptimeMillis()+5_000
+            var posted: android.service.notification.StatusBarNotification?=null
+            while(posted==null && android.os.SystemClock.uptimeMillis()<deadline) {
+                posted=manager.activeNotifications.firstOrNull { it.id==42043 }
+                if(posted==null) android.os.SystemClock.sleep(50)
+            }
+            val notification=requireNotNull(posted) { "Ready notification was not posted within 5 seconds" }.notification
             if (android.os.Build.VERSION.SDK_INT >= 34) {
                 val options=android.app.ActivityOptions.makeBasic()
                     .setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)

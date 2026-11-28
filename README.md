@@ -2,6 +2,8 @@
 
 GitHub Releasesを配布元として、登録した複数のpublic/privateリポジトリのAPKを端末で確認・更新する試作です。Android 6〜10（API 23〜29）が主要対象で、基盤アプリとしてAndroid 14（API 34）までCI互換性を確認します。
 
+0.9.2検収版では、承認したForgejo接続先のRelease APKも同じアプリ行へ統合できます。アプリはAPK実体のpackageNameと署名、配布元はprovider・正規化サーバーURL・repository IDで区別します。repo名だけでは統合しません。同じversionCodeの独立ビルドが競合した場合は、配布元とSHA-256を確認してその版だけの候補を明示選択できます。通常の優先順位は変えず、新版や内容変更では選択を失効します。
+
 ## 初回設定
 
 1. [検収用プレリリース](https://github.com/xiaqui/appdate/releases)で、目的の `store-preview-<SHA>` にある **ReleaseStore-preview.apk** をログイン済みブラウザから開きます。ストア版のIDは `jp.xiaqui.artifact.store.preview`。旧Installer版と並行導入でき、旧版の保存データは旧版から開けます。
@@ -23,6 +25,8 @@ GitHub Releasesを配布元として、登録した複数のpublic/privateリポ
 更新状態は実APKと端末のpackageName、数値のversionCode、署名証明書から判定します。現署名が違う場合は「署名不一致の可能性」と表示します。署名ローテーション、ABI、SDK要件など、導入可否の最終判定はOSに従います。旧版の通常の上書きは制限されます。手動でアンインストールすると対象アプリのデータが消えます。ストアにアンインストール操作はありません。自動ロールバックや設定移行はPhase 2です。
 
 ## 保存・障害時
+
+複数配布元では、最大versionCodeを確認した後、同一版なら利用者が保存した優先順位を使います。同じversionCodeでAPKのSHA-256が不明または不一致なら自動取得を停止します。優先元に障害がある場合も、同じSHA-256を確認済みの承認済み予備元だけを使用し、設定順位は書き換えません。復旧後は次回確認で元の順位へ戻ります。配布元を解除しても履歴と保存APKは保持します。
 
 保存先はアプリ専用の `files/apks/`。1 APKは128 MiBまで、1パッケージ3世代・全体24件・512 MiBまで保持します。上限時は「保存したAPK」から削除対象を選びます。自動削除はありません。ストアの保存履歴にはrepo、タグ、Asset識別子、packageName、バージョン、保存日時を記録します。インストールのキャンセル後も同じAPKを再度開けます。登録削除はAPKを保持します。
 
@@ -47,7 +51,7 @@ PR #6の0.8.1/code 13検収版は [`store-preview-fa230d039ad8`](https://github.
 
 ### Z4T（Android 7）・Z3TC（Android 6）のTLS再検収
 
-1. 0.9.1（versionCode 18）を既存のAppDateへ上書きします。登録、認証、保存済みAPK、更新設定が残っていることを確認します。
+1. 0.9.2（versionCode 19）を既存のAppDateへ上書きします。登録、認証、保存済みAPK、更新設定が残っていることを確認します。
 2. 症状が出たWi-Fiにつなぎ、起動時の自動更新確認とWi-Fi接続時のAPK自動取得をONにしてAppDateを開き直します。処理完了後、repo詳細の「今回の確認」と「自動／一括取得」を記録します。
 3. 同じ回線・同じReleaseのAPK詳細を開き、個別の再解析を実行します。Z4Tと、ISRG Root X1を手動導入していないZ3TCの双方で成功することを確認します。
 4. TLS失敗が残る場合は、保留行の `active`、`internet`、`validated`、`otherWifi` と、表示された通信段階・エラー種別を控えます。PAT、署名付きURL、SSID、IPアドレスは記録しません。

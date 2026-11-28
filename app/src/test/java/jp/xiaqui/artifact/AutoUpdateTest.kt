@@ -53,6 +53,10 @@ class AutoUpdateTest {
         val approved=mapOf("o/one" to first.identity())
         assertEquals(listOf("o/one"),approvedManualCandidates(listOf(registration("o/one",first),registration("o/new",replacement)),approved).map { it.repo })
         assertTrue(approvedManualCandidates(listOf(registration("o/one",replacement)),approved).isEmpty())
+        val preservedOnly = registration("o/one", first).copy(
+            sources = listOf(DistributionSource("source", PROVIDER_GITHUB, "https://github.com", 1, "o/one", 0)),
+            sourceSelectionCurrent = false)
+        assertTrue(approvedManualCandidates(listOf(preservedOnly), approved).isEmpty())
     }
     @Test fun wifiConsentAndThrottleAreExplicit() {
         assertFalse(downloadAllowed(NetworkState(true,false),true,false))

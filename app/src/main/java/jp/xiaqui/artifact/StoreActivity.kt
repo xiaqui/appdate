@@ -29,6 +29,7 @@ class StoreActivity : Activity() {
     private val batchPrefs by lazy { getSharedPreferences("batch-result", MODE_PRIVATE) }
     private val imports by lazy { getSharedPreferences("repo-import-result", MODE_PRIVATE) }
     private val automatic by lazy { AutoSettings(this) }
+    private val connections by lazy { SourceConnections(this) }
     private val batchListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         if (key == "phase" && prefs.getString("phase", "") != CheckPhase.RUNNING.name)
             runOnUiThread { if (!isDestroyed && !isFinishing && !busy && !settings && !shelf && selected == null) renderPreservingScroll() }
@@ -125,7 +126,7 @@ class StoreActivity : Activity() {
             appendLine(names.ifBlank { "アプリ名未確認" } + " · " + r.repo)
             if (packages.size > 1) appendLine("複数パッケージ")
             if (latest != null) {
-                appendLine((if (r.error.isEmpty()) "最新APK" else "保存済み取得情報") + " · ${latest.tag} ${if (latest.preview) "（プレリリース）" else "（正式版）"}")
+                appendLine((if (r.error.isEmpty() && (r.sources.isEmpty() || r.sourceSelectionCurrent)) "最新APK" else "保存済み取得情報") + " · ${latest.tag} ${if (latest.preview) "（プレリリース）" else "（正式版）"}")
                 assets.take(4).forEach { a ->
                     val info = r.inspected[a.identity()]
                     appendLine(a.name + " · " + (info?.let { "${it.pkg} ${it.version} (${it.code}) / ${Installation.status(this@StoreActivity, it)}" } ?: "未解析・判定不能"))
@@ -135,10 +136,14 @@ class StoreActivity : Activity() {
             appendLine("最終成功 " + stamp(r.fetched))
             append("今回の確認 " + stamp(r.checked) + " · " + when {
                 r.error.isNotEmpty() -> "失敗"
+                r.sources.isNotEmpty() && !r.sourceSelectionCurrent && r.sourceNotice.startsWith("全配布元の確認成功") -> "成功（配布なし）"
+                r.sources.isNotEmpty() && !r.sourceSelectionCurrent -> "一部確認 / 選択なし"
+                r.checked > 0 && r.sourceNotice.isNotEmpty() -> "一部成功 / 状態あり"
                 r.checked > 0 -> "成功"
                 else -> "未記録"
             })
             if (r.error.isNotEmpty()) append("\n取得失敗 · ${r.error}")
+            if (r.sourceNotice.isNotEmpty()) append("\n${r.sourceNotice}")
         }
     }
 
@@ -212,6 +217,22 @@ class StoreActivity : Activity() {
             label("共通PAT保存後、APIが列挙した未登録repoのRelease履歴を確認し、APK配布履歴があるrepoだけを自動追加します。再取得は追加専用です。既存登録は削除しません。APIに出ないrepoは手動登録してください。")
             button("repoを再取得") { importCommon() }
             imports.getString("summary", null)?.let { label(it) }
+            label("追加の配布元", true)
+            label("Forgejoは接続先・owner・PATをサーバー単位で登録します。候補を確認して承認するまで既存アプリの優先順位は変えません。")
+            button("Forgejo接続先を登録・repo取得") { forgejoConnection() }
+            connections.all().forEach { connection ->
+                val host = runCatching { java.net.URI(connection.server).host }.getOrNull() ?: "Forgejo"
+                label("$host / ${connection.owner}")
+                button("このForgejoからrepoを再取得") { importForgejo(connection) }
+                button("repo URL / owner/repoを手動登録") { manualForgejo(connection) }
+                button("この接続設定とPATを解除") {
+                    AlertDialog.Builder(this).setMessage("接続設定を解除します。承認済み配布元・履歴・保存APKは削除しません。")
+                        .setNegativeButton("戻る", null).setPositiveButton("解除") { _, _ ->
+                            try { vault.forgetSource(connection.key); connections.remove(connection.key); render() }
+                            catch (e: ImportFailure) { notice(e.message.orEmpty()) }
+                        }.show()
+                }
+            }
             fun option(title: String, checked: Boolean, change: (Boolean) -> Unit) {
                 panel.addView(CheckBox(this).apply {
                     text = title
@@ -247,6 +268,62 @@ class StoreActivity : Activity() {
             if (catalog.pendingAuth() != null) label("認証移行の完了待ち。登録を編集→保存で再試行してください。旧認証は保持しています。")
             label(if (r.previews) "最新の対象：正式版＋プレリリース" else "最新の対象：正式版のみ")
             label(latestSummary(r))
+            if (r.sources.isNotEmpty()) {
+                label("承認済み配布元", true)
+                val ordered = catalog.sources(r).sortedBy { it.priority }
+                ordered.forEachIndexed { index, source ->
+                    val provider = if (source.provider == PROVIDER_GITHUB) "GitHub" else "Forgejo"
+                    val host = runCatching { java.net.URI(source.server).host }.getOrNull() ?: provider
+                    label("${index + 1}. $provider · $host · ${source.repository}${if (source.approved) "" else "（解除済み・履歴保持）"}\n" + when {
+                        source.error.isNotEmpty() -> "今回失敗：${source.error}（前回成功 ${stamp(source.fetched)}）"
+                        source.checked > 0 && source.history.firstOrNull { r.previews || !it.preview }?.assets.orEmpty().isEmpty() ->
+                            "確認成功・今回の対象APKなし ${stamp(source.checked)}"
+                        source.checked > 0 && source.history.firstOrNull { r.previews || !it.preview }?.let { release ->
+                            release.assets.singleOrNull()?.let { source.inspected[it.identity()] } == null
+                        } == true -> "確認成功・APK照合不能（未解析または複数APK） ${stamp(source.checked)}"
+                        source.checked > 0 -> "確認成功 ${stamp(source.checked)}"
+                        else -> "未確認"
+                    })
+                    if (source.approved && index > 0) button("この配布元を優先") {
+                        val keys = ordered.map { it.key }.toMutableList().also { list ->
+                            val key = list.removeAt(index); list.add(0, key)
+                        }
+                        try { catalog.reorderSources(r, keys); render() } catch (e: ImportFailure) { notice(e.message.orEmpty()) }
+                    }
+                    if (source.approved && ordered.count { it.approved } > 1) button("この配布元を解除") {
+                        AlertDialog.Builder(this).setMessage("配布元 ${source.repository} を解除します。履歴と保存APKは削除しません。")
+                            .setNegativeButton("戻る", null).setPositiveButton("解除") { _, _ ->
+                                try { catalog.removeSource(r, source.key); render() } catch (e: ImportFailure) { notice(e.message.orEmpty()) }
+                            }.show()
+                    }
+                    if (!source.approved) button("この配布元を再承認") {
+                        try { catalog.approveSource(r, source.key); render() } catch (e: ImportFailure) { notice(e.message.orEmpty()) }
+                    }
+                }
+                label("障害時も設定した優先順位は書き換えません。復旧後は次回確認からこの順位へ戻ります。")
+                val conflicts = sourceConflictCandidates(catalog.sources(r), r.previews)
+                if (conflicts.isNotEmpty()) {
+                    label("同じversionCodeで内容の異なるAPKがあります。明示選択はこの版・SHA-256だけに適用し、通常の配布元優先順位は変更しません。別versionCodeや内容変更時は再び自動停止します。", true)
+                    conflicts.forEach { candidate ->
+                        val provider = if (candidate.source.provider == PROVIDER_GITHUB) "GitHub" else "Forgejo"
+                        val digest = candidate.asset.digest
+                        val selectedChoice = r.sourceChoice?.let { it.sourceKey == candidate.source.key &&
+                            it.versionCode == candidate.info.code && digest?.equals(it.digest, true) == true } == true
+                        if (candidate.source.error.isNotEmpty()) {
+                            label("$provider · ${candidate.source.repository} · 今回の確認に失敗（選択不可）")
+                        } else if (digest.isNullOrBlank()) {
+                            label("$provider · ${candidate.source.repository} · versionCode ${candidate.info.code}\nSHA-256未確認（選択不可）")
+                        } else button("${if (selectedChoice) "選択済み：" else "この版を選択："}$provider · ${candidate.source.repository}\nversionCode ${candidate.info.code} · SHA-256 ${digest.take(12)}…") {
+                            AlertDialog.Builder(this).setMessage(
+                                "${candidate.source.repository} のAPKをversionCode ${candidate.info.code}の競合解決として選択します。\n\nSHA-256: $digest\n\n配布元の通常優先順位は変えません。")
+                                .setNegativeButton("戻る", null).setPositiveButton("このAPKを選択") { _, _ ->
+                                    try { catalog.chooseSource(r, candidate.source.key); render() }
+                                    catch (e: ImportFailure) { notice(e.message.orEmpty()) }
+                                }.show()
+                        }
+                    }
+                }
+            }
             automatic.prefs.getString("repo:${r.repo}", null)?.let { label("自動/一括取得：$it") }
             button("更新を確認 / 再試行") { refresh(listOf(r)) }
             button("個別PATの設定・再認証") { auth(r) }
@@ -304,7 +381,6 @@ class StoreActivity : Activity() {
             }
         })
         batch.display()?.let { label(it) }
-        imports.getString("summary", null)?.let { label(it) }
         itemsPage(registrations) { repo -> catalog.get(repo)?.let(::addRow) }
     }
 
@@ -390,6 +466,84 @@ class StoreActivity : Activity() {
             }
         }
         dialog.show()
+    }
+
+    private fun forgejoConnection() {
+        val server = EditText(this).apply { hint = "https://forgejo.example/subpath"; setSingleLine() }
+        val owner = EditText(this).apply { hint = "owner（ユーザーまたは組織）"; setSingleLine() }
+        val token = EditText(this).apply {
+            hint = "Forgejo PAT"; setSingleLine(); isSaveEnabled = false
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val fields = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad,0,pad,0)
+            addView(server); addView(owner); addView(token) }
+        val dialog = AlertDialog.Builder(this).setTitle("Forgejo接続先")
+            .setMessage("自動repo取得にはread:userとread:repositoryを使用します。PATはこの接続先だけに送信し、端末内へ暗号化保存します。")
+            .setView(fields).setNegativeButton("戻る", null).setPositiveButton("保存して候補取得", null).create()
+        protectSensitiveDialog(dialog)
+        dialog.setOnShowListener {
+            protectSensitiveDialog(dialog)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                try {
+                    val value = token.text.toString().trim()
+                    if (!Regex("[A-Za-z0-9_\\-]{1,500}").matches(value)) throw ImportFailure("Forgejo PATを確認してください。")
+                    val connection = connections.saveForgejo(server.text.toString(), owner.text.toString())
+                    vault.useSource(connection.key, value)
+                    token.text.clear(); dialog.dismiss(); importForgejo(connection)
+                } catch (e: ImportFailure) { token.error = e.message }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun importForgejo(connection: SourceConnection) {
+        work("Forgejoのrepo・APKを確認中…", {
+            val token = vault.tokenForSource(connection.key) ?: throw ImportFailure("Forgejo PATを再入力してください。")
+            service.discoverForgejo(connection, token)
+        }) { report ->
+            imports.edit().putString("summary", report.summary).commit()
+            showForgejoCandidates(report)
+        }
+    }
+
+    private fun manualForgejo(connection: SourceConnection) {
+        val field = EditText(this).apply { hint = "owner/repo またはForgejo repo URL"; setSingleLine() }
+        val dialog = AlertDialog.Builder(this).setTitle("Forgejo repoを手動登録").setView(field)
+            .setNegativeButton("戻る", null).setPositiveButton("APKを確認", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val raw = field.text.toString(); dialog.dismiss()
+                work("Forgejo repo・APKを確認中…", {
+                    val token = vault.tokenForSource(connection.key) ?: throw ImportFailure("Forgejo PATを再入力してください。")
+                    service.discoverForgejoRepo(connection, token, raw)
+                }) { report -> imports.edit().putString("summary", report.summary).commit(); showForgejoCandidates(report) }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showForgejoCandidates(report: ForgejoDiscoveryReport) {
+        if (report.candidates.isEmpty()) { render(); notice(report.summary); return }
+        val choices = report.candidates.map { candidate ->
+                val target = candidate.existingRepo?.let { "既存アプリへ配布元追加" } ?: "新規アプリ登録"
+                "${candidate.info.label} ${candidate.info.version} (${candidate.info.code})\n${candidate.source.repository} · $target"
+        }.toTypedArray()
+        val checked = BooleanArray(choices.size) { true }
+        AlertDialog.Builder(this).setTitle("Forgejo配布元の承認")
+            .setMessage("packageNameと署名をAPK実体で確認済みです。個別に除外できます。承認後はForgejo優先、既存GitHubは予備になります。")
+            .setMultiChoiceItems(choices, checked) { _, which, value -> checked[which] = value }
+            .setNegativeButton("保留", null)
+            .setPositiveButton("選択した候補を承認") { _, _ ->
+                val selectedCandidates = report.candidates.filterIndexed { index, _ -> checked[index] }
+                work("配布元を登録・初回確認中…", {
+                    val approval = service.approveForgejo(selectedCandidates)
+                    approval.approved.distinctBy { it.repo }.forEach {
+                        if (Thread.currentThread().isInterrupted) throw InterruptedException()
+                        service.refresh(catalog.get(it.repo) ?: it)
+                    }
+                    approval
+                }) { approval -> settings = false; selected = null; render(); notice(approval.summary) }
+            }.show()
     }
 
     private fun importCommon(returnHome: Boolean = false) {

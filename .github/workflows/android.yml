@@ -1,11 +1,12 @@
 name: Personal Release Store
 on:
   push:
-    branches: ['work/startup-refresh-summary', 'fix/android7-wifi-diagnostics']
+    branches: ['work/startup-refresh-summary', 'fix/android7-wifi-diagnostics', 'work/forgejo-provider']
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
   # Preview delivery requires a deliberate [publish-preview] commit or manual dispatch after all gates.
+  # A documentation/workflow-only delivery commit must reuse the exact verified bundle and matching device results.
   workflow_dispatch:
     inputs:
       reuse_run_id:
@@ -198,7 +199,7 @@ jobs:
             identity=$(jq -er .currentIdentity <<<"$spec")
             all_ok=true
             required_apis=(23 29 34)
-            if [[ "$GITHUB_REF_NAME" == fix/android7-wifi-diagnostics ]]; then
+            if [[ "$GITHUB_REF_NAME" == fix/android7-wifi-diagnostics || "$GITHUB_REF_NAME" == work/forgejo-provider ]]; then
               required_apis+=(24)
             fi
             for api in "${required_apis[@]}"; do
@@ -241,7 +242,7 @@ jobs:
       fail-fast: false
       matrix:
         # Routine CI covers Android 6, 10, and 14. Broader OS coverage is reserved for release checks.
-        api: ${{ fromJSON((inputs.full_matrix == true || contains(github.event.head_commit.message, '[full-matrix]')) && (github.ref_name == 'fix/android7-wifi-diagnostics' && '[23,24,29,30,31,33,34,35]' || '[23,29,30,31,33,34,35]') || (github.ref_name == 'fix/android7-wifi-diagnostics' && '[23,24,29,34]' || '[23,29,34]')) }}
+        api: ${{ fromJSON((inputs.full_matrix == true || contains(github.event.head_commit.message, '[full-matrix]')) && ((github.ref_name == 'fix/android7-wifi-diagnostics' || github.ref_name == 'work/forgejo-provider') && '[23,24,29,30,31,33,34,35]' || '[23,29,30,31,33,34,35]') || ((github.ref_name == 'fix/android7-wifi-diagnostics' || github.ref_name == 'work/forgejo-provider') && '[23,24,29,34]' || '[23,29,34]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -273,7 +274,7 @@ jobs:
 
   preview:
     needs: [verify, reuse, device]
-    if: always() && (needs.device.result == 'success' || needs.reuse.outputs.device_reused == 'true') && (needs.verify.result == 'success' || needs.reuse.result == 'success') && (github.ref == 'refs/heads/work/startup-refresh-summary' || github.ref == 'refs/heads/fix/android7-wifi-diagnostics') && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
+    if: always() && (needs.device.result == 'success' || needs.reuse.outputs.device_reused == 'true') && (needs.verify.result == 'success' || needs.reuse.result == 'success') && (github.ref == 'refs/heads/work/startup-refresh-summary' || github.ref == 'refs/heads/fix/android7-wifi-diagnostics' || github.ref == 'refs/heads/work/forgejo-provider') && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -300,6 +301,11 @@ jobs:
             test "$code" = 18
             title="legacy Android TLS compatibility"
             details="PR #13 keeps system trust and adds the fingerprint-pinned official ISRG Root X1 for AppDate HTTPS on Android 6/7 without trusting arbitrary user CAs or disabling hostname, expiry, signature, redirect, or cleartext checks. Install over the existing AppDate on Z4T and a Z3TC without manually adding that CA; confirm registration, PAT, history, saved APKs, Wi-Fi limits, automatic download, and explicit APK inspection remain intact."
+          elif [[ "$GITHUB_REF_NAME" == work/forgejo-provider ]]; then
+            test "$version" = 0.9.2
+            test "$code" = 19
+            title="Forgejo conflict choice and legacy TLS integration"
+            details="Keeps the accepted Forgejo owner discovery and GitHub integration, adds version-and-digest-bound explicit choice for independently built equal-version APKs, preserves known app data while blocking unresolved automatic or manual downloads, removes registration results from the top screen, and integrates PR #13 legacy Android TLS compatibility. Install over 0.9.0 or 0.9.1 and verify the existing registrations, PATs, history, saved APKs, priorities, Wi-Fi limits, conflict choice, fallback, recovery, and Z4T/Z3TC TLS paths."
           fi
           apk_source=$(jq -er .sourceSha delivery/manifest.json)
           export PREVIEW_SOURCE="$GITHUB_SHA"

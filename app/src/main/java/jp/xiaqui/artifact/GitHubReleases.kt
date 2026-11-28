@@ -12,7 +12,8 @@ import java.security.DigestInputStream
 import java.security.MessageDigest
 
 internal data class ReleaseItem(val id: Long, val tag: String)
-internal data class ReleaseApk(val id: Long, val name: String, val size: Long, val digest: String?, val updated: String = "")
+internal data class ReleaseApk(val id: Long, val name: String, val size: Long, val digest: String?, val updated: String = "",
+    val sourceKey: String = "github", val downloadUrl: String = "")
 
 internal class AssetConnectionFailure(stage: String, cause: IOException) : IOException(
     "APK通信失敗（$stage・" + when (cause) {

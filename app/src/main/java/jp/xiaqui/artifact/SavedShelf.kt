@@ -25,7 +25,9 @@ internal class SavedShelf(private val context: Context) {
     private fun candidates(repo: String, asset: ReleaseApk) = dir.listFiles().orEmpty().filter { file ->
         val r = record(file)
         val key = r?.optString("asset")
-        val oldKey = "${asset.id}:${asset.size}:${asset.digest.orEmpty()}"
+        // Before multi-source support the ledger key had no source namespace, but did include updated.
+        // Keep accepting it so repo rename history and already-downloaded APKs survive lazy migration.
+        val oldKey = "${asset.id}:${asset.size}:${asset.digest.orEmpty()}:${asset.updated}"
         file.isFile && r != null && catalog.canonical(r.optString("repo")) == repo && (key == asset.identity() || key == oldKey)
     }
 
@@ -43,6 +45,16 @@ internal class SavedShelf(private val context: Context) {
             sha != null && file.length() == asset.size && try { hash(file).equals(sha,true) }
                 catch (_: java.io.IOException) { false }
         }
+
+    fun verifiedAcrossSources(info: ApkInfo, digest: String?): File? = synchronized(lock) {
+        if (digest.isNullOrBlank()) return@synchronized null
+        dir.listFiles().orEmpty().firstOrNull { file ->
+            val r = record(file) ?: return@firstOrNull false
+            file.isFile && r.optString("package") == info.pkg && r.optString("signer") == info.signer &&
+                r.optLong("versionCode") == info.code && r.optString("sha256").equals(digest, true) &&
+                runCatching { hash(file).equals(digest, true) }.getOrDefault(false)
+        }
+    }
 
     fun save(staged: File, name: String, info: ApkInfo, source: String, repo: String? = null,
         tag: String? = null, asset: ReleaseApk? = null, automatic: Boolean = false): File = synchronized(lock) {
