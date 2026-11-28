@@ -246,6 +246,9 @@ internal class StoreService(private val context: Context, val catalog: Catalog,
     }
     fun prepareUpdate(r: Registration, allowed: () -> Unit): String = synchronized(transferLock) {
         if (r.error.isNotEmpty()) return@synchronized "保留（更新確認失敗）"
+        if (r.sources.isNotEmpty() && !r.sourceSelectionCurrent) return@synchronized
+            if (r.sourceNotice.startsWith("全配布元の確認成功")) "対象なし（今回の配布なし）"
+            else "保留（今回の配布元候補を選択できません）"
         val release=r.visible.firstOrNull() ?: return@synchronized "対象なし"
         val asset=release.assets.singleOrNull() ?: return@synchronized "保留（複数APK・手動選択が必要）"
         val known=r.inspected[asset.identity()]

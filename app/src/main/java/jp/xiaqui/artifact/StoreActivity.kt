@@ -126,7 +126,7 @@ class StoreActivity : Activity() {
             appendLine(names.ifBlank { "アプリ名未確認" } + " · " + r.repo)
             if (packages.size > 1) appendLine("複数パッケージ")
             if (latest != null) {
-                appendLine((if (r.error.isEmpty()) "最新APK" else "保存済み取得情報") + " · ${latest.tag} ${if (latest.preview) "（プレリリース）" else "（正式版）"}")
+                appendLine((if (r.error.isEmpty() && (r.sources.isEmpty() || r.sourceSelectionCurrent)) "最新APK" else "保存済み取得情報") + " · ${latest.tag} ${if (latest.preview) "（プレリリース）" else "（正式版）"}")
                 assets.take(4).forEach { a ->
                     val info = r.inspected[a.identity()]
                     appendLine(a.name + " · " + (info?.let { "${it.pkg} ${it.version} (${it.code}) / ${Installation.status(this@StoreActivity, it)}" } ?: "未解析・判定不能"))
@@ -136,10 +136,14 @@ class StoreActivity : Activity() {
             appendLine("最終成功 " + stamp(r.fetched))
             append("今回の確認 " + stamp(r.checked) + " · " + when {
                 r.error.isNotEmpty() -> "失敗"
+                r.sources.isNotEmpty() && !r.sourceSelectionCurrent && r.sourceNotice.startsWith("全配布元の確認成功") -> "成功（配布なし）"
+                r.sources.isNotEmpty() && !r.sourceSelectionCurrent -> "一部確認 / 選択なし"
+                r.checked > 0 && r.sourceNotice.isNotEmpty() -> "一部成功 / 状態あり"
                 r.checked > 0 -> "成功"
                 else -> "未記録"
             })
             if (r.error.isNotEmpty()) append("\n取得失敗 · ${r.error}")
+            if (r.sourceNotice.isNotEmpty()) append("\n${r.sourceNotice}")
         }
     }
 
@@ -272,6 +276,11 @@ class StoreActivity : Activity() {
                     val host = runCatching { java.net.URI(source.server).host }.getOrNull() ?: provider
                     label("${index + 1}. $provider · $host · ${source.repository}${if (source.approved) "" else "（解除済み・履歴保持）"}\n" + when {
                         source.error.isNotEmpty() -> "今回失敗：${source.error}（前回成功 ${stamp(source.fetched)}）"
+                        source.checked > 0 && source.history.firstOrNull { r.previews || !it.preview }?.assets.orEmpty().isEmpty() ->
+                            "確認成功・今回の対象APKなし ${stamp(source.checked)}"
+                        source.checked > 0 && source.history.firstOrNull { r.previews || !it.preview }?.let { release ->
+                            release.assets.singleOrNull()?.let { source.inspected[it.identity()] } == null
+                        } == true -> "確認成功・APK照合不能（未解析または複数APK） ${stamp(source.checked)}"
                         source.checked > 0 -> "確認成功 ${stamp(source.checked)}"
                         else -> "未確認"
                     })
@@ -292,6 +301,26 @@ class StoreActivity : Activity() {
                     }
                 }
                 label("障害時も設定した優先順位は書き換えません。復旧後は次回確認からこの順位へ戻ります。")
+                val conflicts = sourceConflictCandidates(catalog.sources(r), r.previews)
+                if (conflicts.isNotEmpty()) {
+                    label("同じversionCodeで内容の異なるAPKがあります。明示選択はこの版・SHA-256だけに適用し、通常の配布元優先順位は変更しません。別versionCodeや内容変更時は再び自動停止します。", true)
+                    conflicts.forEach { candidate ->
+                        val provider = if (candidate.source.provider == PROVIDER_GITHUB) "GitHub" else "Forgejo"
+                        val digest = candidate.asset.digest
+                        val selectedChoice = r.sourceChoice?.let { it.sourceKey == candidate.source.key &&
+                            it.versionCode == candidate.info.code && digest?.equals(it.digest, true) == true } == true
+                        if (digest.isNullOrBlank()) {
+                            label("$provider · ${candidate.source.repository} · versionCode ${candidate.info.code}\nSHA-256未確認（選択不可）")
+                        } else button("${if (selectedChoice) "選択済み：" else "この版を選択："}$provider · ${candidate.source.repository}\nversionCode ${candidate.info.code} · SHA-256 ${digest.take(12)}…") {
+                            AlertDialog.Builder(this).setMessage(
+                                "${candidate.source.repository} のAPKをversionCode ${candidate.info.code}の競合解決として選択します。\n\nSHA-256: $digest\n\n配布元の通常優先順位は変えません。")
+                                .setNegativeButton("戻る", null).setPositiveButton("このAPKを選択") { _, _ ->
+                                    try { catalog.chooseSource(r, candidate.source.key); render() }
+                                    catch (e: ImportFailure) { notice(e.message.orEmpty()) }
+                                }.show()
+                        }
+                    }
+                }
             }
             automatic.prefs.getString("repo:${r.repo}", null)?.let { label("自動/一括取得：$it") }
             button("更新を確認 / 再試行") { refresh(listOf(r)) }
@@ -350,7 +379,6 @@ class StoreActivity : Activity() {
             }
         })
         batch.display()?.let { label(it) }
-        imports.getString("summary", null)?.let { label(it) }
         itemsPage(registrations) { repo -> catalog.get(repo)?.let(::addRow) }
     }
 

@@ -54,7 +54,7 @@ internal enum class AutoTrigger { STARTUP, PERIODIC, MANUAL }
 
 internal fun approvedManualCandidates(rows: List<Registration>, approved: Map<String,String>) = rows.filter { r ->
     val asset=r.visible.firstOrNull()?.assets?.singleOrNull()
-    asset != null && approved[r.repo]==asset.identity()
+    (r.sources.isEmpty() || r.sourceSelectionCurrent) && asset != null && approved[r.repo]==asset.identity()
 }
 
 internal fun unchangedRegistration(initial: Registration, current: Registration?) =
@@ -162,7 +162,7 @@ internal object AutoUpdates {
         return catalog.names().mapNotNull(catalog::get).filter { r ->
             val a=r.visible.firstOrNull()?.assets?.singleOrNull()
             val info=a?.let { r.inspected[it.identity()] }
-            r.error.isEmpty() && a != null &&
+            r.error.isEmpty() && (r.sources.isEmpty() || r.sourceSelectionCurrent) && a != null &&
                 (info == null || updateEligible(info,runCatching { Installation.installed(context,info.pkg) }.getOrNull(),Build.VERSION.SDK_INT)) &&
                 SavedShelf(context).candidate(r.repo,a)?.let { info != null && checkedFiles[key(r.repo,a)]==stamp(it) } != true
         }
@@ -274,6 +274,7 @@ internal object AutoUpdates {
         val catalog=Catalog(context)
         checkedFiles.clear()
         catalog.names().mapNotNull(catalog::get).forEach { r ->
+            if (r.sources.isNotEmpty() && !r.sourceSelectionCurrent) return@forEach
             r.visible.firstOrNull()?.assets?.singleOrNull()?.let { a ->
                 shelf.verified(r.repo,a)?.let { checkedFiles[key(r.repo,a)]=stamp(it) }
             }

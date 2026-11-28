@@ -42,6 +42,63 @@ class ReleaseProvidersTest {
         assertTrue(resolveSources(listOf(source("forge",0), source("gh",1,signer="BB")), false).conflict.isNotEmpty())
     }
 
+    @Test fun explicitChoiceResolvesOnlyTheExactConflictingVersionAndDigest() {
+        val forge = source("forge", 0, code = 7, digest = "a".repeat(64))
+        val github = source("gh", 1, code = 7, digest = "b".repeat(64))
+        val choice = SourceChoice("gh", 7, "b".repeat(64))
+        val resolved = resolveSources(listOf(forge, github), false, choice)
+        assertEquals("gh", resolved.selected!!.source.key)
+        assertTrue(resolved.explicitChoice)
+        assertEquals(0, forge.priority)
+        assertEquals(1, github.priority)
+
+        val changedAsset = github.history.single().assets.single().copy(digest = "c".repeat(64))
+        val changedGithub = github.copy(
+            history = listOf(github.history.single().copy(assets = listOf(changedAsset))),
+            inspected = mapOf(changedAsset.identity() to app.copy(code = 7)))
+        assertTrue(resolveSources(listOf(forge, changedGithub), false, choice).conflict.isNotEmpty())
+        assertTrue(resolveSources(listOf(source("forge", 0, code = 8), github), false, choice)
+            .selected?.source?.key == "forge")
+    }
+
+    @Test fun unknownDigestRemainsBlockedAndCannotMatchAStoredChoice() {
+        val forge = source("forge", 0, code = 7, digest = null)
+        val github = source("gh", 1, code = 7, digest = "b".repeat(64))
+        val resolved = resolveSources(listOf(forge, github), false,
+            SourceChoice("forge", 7, "a".repeat(64)))
+        assertNull(resolved.selected)
+        assertTrue(resolved.conflict.contains("SHA-256未確認"))
+        assertEquals(2, sourceConflictCandidates(listOf(forge, github), false).size)
+    }
+
+    @Test fun uninspectedLatestAssetBlocksOtherSourceFromAutomaticSelection() {
+        val unknown = source("forge", 0, code = 9).copy(inspected = emptyMap())
+        val known = source("gh", 1, code = 8)
+        val resolved = resolveSources(listOf(unknown, known), false)
+        assertNull(resolved.selected)
+        assertTrue(resolved.conflict.contains("照合できません"))
+    }
+
+    @Test fun partialFailureAndNoApkAreReportedWithoutDiscardingSafeCandidate() {
+        val failed = source("forge", 0, code = 1, error = "offline")
+        val known = source("gh", 1, code = 2)
+        val partial = resolveSources(listOf(failed, known), false)
+        assertEquals("gh", partial.selected!!.source.key)
+        assertTrue(partial.partial)
+        assertTrue(partial.notice.contains("確認失敗"))
+
+        val noApk = source("forge", 0).copy(history = emptyList(), inspected = emptyMap(), checked = 2)
+        val available = resolveSources(listOf(noApk, known), false)
+        assertEquals("gh", available.selected!!.source.key)
+        assertTrue(available.notice.contains("対象APKなし"))
+
+        val emptyFailure = failed.copy(history = emptyList(), inspected = emptyMap())
+        val onlyNoApk = resolveSources(listOf(emptyFailure, noApk), false)
+        assertNull(onlyNoApk.selected)
+        assertTrue(onlyNoApk.notice.contains("確認失敗"))
+        assertTrue(onlyNoApk.notice.contains("対象APKなし"))
+    }
+
     @Test fun unapprovedSourceCannotAffectSelection() {
         val approved = source("gh", 1, code = 1)
         val unapproved = source("forge", 0, code = 9).copy(approved = false)
@@ -50,7 +107,9 @@ class ReleaseProvidersTest {
 
     @Test fun sourceCodecKeepsProviderNamespaceHistoryAndAuthScope() {
         val forge = source("forge-key", 0).copy(authKey = "connection-key")
-        val registration = Registration("o/r", true, "rev", sources = listOf(forge))
+        val registration = Registration("o/r", true, "rev", sources = listOf(forge),
+            sourceChoice = SourceChoice(forge.key, 1, "a".repeat(64)), sourceNotice = "partial",
+            sourceSelectionCurrent = false)
         val restored = CatalogCodec.decode(CatalogCodec.encode(registration))
         assertEquals(registration, restored)
         assertTrue(restored.sources.single().history.single().assets.single().identity().startsWith("forge-key:"))

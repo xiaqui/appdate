@@ -162,26 +162,71 @@ internal data class SourceCandidate(
     val info: ApkInfo
 )
 
-internal data class SourceResolution(val selected: SourceCandidate?, val conflict: String = "", val partial: Boolean = false)
+internal data class SourceResolution(val selected: SourceCandidate?, val conflict: String = "",
+    val partial: Boolean = false, val explicitChoice: Boolean = false, val notice: String = "")
 
-/** Version is authoritative; priority only breaks ties. Equal code with unequal/unknown bytes stops automatically. */
-internal fun resolveSources(sources: List<DistributionSource>, previews: Boolean): SourceResolution {
-    val candidates = sources.filter { it.approved }.mapNotNull { source ->
+internal fun sourceCandidates(sources: List<DistributionSource>, previews: Boolean): List<SourceCandidate> =
+    sources.filter { it.approved }.mapNotNull { source ->
         val release = source.history.firstOrNull { previews || !it.preview } ?: return@mapNotNull null
         val asset = release.assets.singleOrNull() ?: return@mapNotNull null
         val info = source.inspected[asset.identity()] ?: return@mapNotNull null
         SourceCandidate(source, release, asset, info)
     }
-    if (candidates.isEmpty()) return SourceResolution(null, partial = sources.any { it.error.isNotEmpty() })
+
+internal fun sourceConflictCandidates(sources: List<DistributionSource>, previews: Boolean): List<SourceCandidate> {
+    val candidates = sourceCandidates(sources, previews)
+    val identities = candidates.map { it.info.pkg to it.info.signer }.distinct()
+    if (identities.size != 1 || identities.single().second.isBlank()) return emptyList()
+    val latest = candidates.filter { it.info.code == candidates.maxOfOrNull { row -> row.info.code } }
+    val digests = latest.map { it.asset.digest?.lowercase() }.distinct()
+    return latest.takeIf { it.size > 1 && (digests.any { digest -> digest.isNullOrBlank() } || digests.size != 1) }.orEmpty()
+}
+
+/** Version is authoritative; priority only breaks ties. Equal code with unequal/unknown bytes stops automatically. */
+internal fun resolveSources(sources: List<DistributionSource>, previews: Boolean,
+    choice: SourceChoice? = null): SourceResolution {
+    val approved = sources.filter { it.approved }
+    val candidates = sourceCandidates(approved, previews)
+    val incomplete = approved.filter { source ->
+        val release = source.history.firstOrNull { previews || !it.preview } ?: return@filter false
+        val asset = release.assets.singleOrNull() ?: return@filter release.assets.isNotEmpty()
+        source.inspected[asset.identity()] == null
+    }
+    val noApk = approved.count { source ->
+        val release = source.history.firstOrNull { previews || !it.preview }
+        source.error.isEmpty() && (release == null || release.assets.isEmpty())
+    }
+    val failed = approved.count { it.error.isNotEmpty() }
+    val notice = when {
+        failed > 0 && candidates.isNotEmpty() -> "一部配布元は確認失敗。確認済み候補を使用しています（失敗 $failed）。"
+        failed > 0 && candidates.isEmpty() && noApk + failed == approved.size ->
+            "一部配布元は確認失敗、確認成功した配布元は今回の対象APKなし。前回のアプリ情報を保持しています。"
+        noApk > 0 && candidates.isNotEmpty() -> "一部配布元は今回の対象APKなし（$noApk）。"
+        noApk == approved.size && approved.isNotEmpty() && failed == 0 -> "全配布元の確認成功・今回の対象APKなし。前回のアプリ情報を保持しています。"
+        else -> ""
+    }
+    if (incomplete.isNotEmpty()) return SourceResolution(null,
+        "配布元の最新APKを照合できません（未解析または複数APK）。自動取得を停止しました。",
+        partial = failed > 0, notice = notice)
+    if (candidates.isEmpty()) return SourceResolution(null, partial = failed > 0, notice = notice)
     val appIdentities = candidates.map { it.info.pkg to it.info.signer }.distinct()
     if (appIdentities.size != 1 || appIdentities.single().second.isBlank())
-        return SourceResolution(null, "配布元間のpackageNameまたは署名が一致しません。")
+        return SourceResolution(null, "配布元間のpackageNameまたは署名が一致しません。", notice = notice)
     val maxCode = candidates.maxOf { it.info.code }
     val latest = candidates.filter { it.info.code == maxCode }
     val digests = latest.map { it.asset.digest?.lowercase() }.distinct()
-    if (latest.size > 1 && (digests.any { it.isNullOrBlank() } || digests.size != 1))
-        return SourceResolution(null, "同じversionCodeのAPK内容を配布元間で確認できません。自動取得を停止しました。")
-    return SourceResolution(latest.minBy { it.source.priority }, partial = sources.any { it.error.isNotEmpty() })
+    if (latest.size > 1 && (digests.any { it.isNullOrBlank() } || digests.size != 1)) {
+        val chosen = choice?.let { saved -> latest.firstOrNull { candidate ->
+            candidate.source.key == saved.sourceKey && candidate.info.code == saved.versionCode &&
+                candidate.asset.digest?.equals(saved.digest, true) == true
+        } }
+        if (chosen != null) return SourceResolution(chosen,
+            partial = failed > 0, explicitChoice = true, notice = notice)
+        val reason = if (digests.any { it.isNullOrBlank() }) "SHA-256未確認" else "SHA-256不一致"
+        return SourceResolution(null, "同じversionCodeのAPKが競合しています（$reason）。候補を明示選択するまで自動取得を停止しました。",
+            partial = failed > 0, notice = notice)
+    }
+    return SourceResolution(latest.minBy { it.source.priority }, partial = failed > 0, notice = notice)
 }
 
 internal data class ForgejoRepoPage(val repos: List<RemoteRepo>, val more: Boolean)
