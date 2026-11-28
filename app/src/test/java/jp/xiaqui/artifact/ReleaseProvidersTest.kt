@@ -75,4 +75,16 @@ class ReleaseProvidersTest {
         assertEquals("token secret-token", requests.single().getRequestProperty("Authorization"))
         assertFalse(requests.single().instanceFollowRedirects)
     }
+
+    @Test fun manualForgejoRepoStaysOnConfiguredServerAndOwner() {
+        val requests = mutableListOf<Reply>()
+        val api = ForgejoDiscovery("https://forge.example/sub", "sugi", "secret-token") { url ->
+            Reply(url, 200, """{"id":9,"full_name":"sugi/private"}""").also(requests::add)
+        }
+        assertEquals(RemoteRepo(9,"sugi/private"), api.repository("https://forge.example/sub/sugi/private"))
+        assertEquals("/sub/api/v1/repos/sugi/private", requests.single().url.path)
+        assertEquals("token secret-token", requests.single().getRequestProperty("Authorization"))
+        assertThrows(ImportFailure::class.java) { api.repository("other/private") }
+        assertThrows(ImportFailure::class.java) { api.repository("https://evil.example/sugi/private") }
+    }
 }
