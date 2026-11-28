@@ -9,7 +9,7 @@ internal data class RepoIdentity(val id: Long, val name: String)
 
 /** Metadata redirects never leave the GitHub API or accept query credentials. */
 internal class RepoIdentityApi(private val auth: ReleaseAuth,
-    private val connect: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }) {
+    private val connect: (URL) -> HttpURLConnection = TlsCompatibility::open) {
     fun resolve(name: String, knownId: Long = 0, credentialRepo: String = name): RepoIdentity {
         var url = URL(if (knownId > 0) "https://api.github.com/repositories/$knownId" else "https://api.github.com/repos/${repoName(name)}")
         val individual = auth.tokenFor(credentialRepo)

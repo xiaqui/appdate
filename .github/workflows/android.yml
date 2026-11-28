@@ -297,15 +297,15 @@ jobs:
           title="startup refresh summary"
           details="Startup refresh and shared automatic/manual summary."
           if [[ "$GITHUB_REF_NAME" == fix/android7-wifi-diagnostics ]]; then
-            test "$version" = 0.8.4
-            test "$code" = 16
-            title="Android 7 APK download diagnostics"
-            details="PR #13 records the active network at Wi-Fi deferral and distinguishes APK API/redirect/body transport failures. On Z4T, install over the existing AppDate, leave automatic Wi-Fi download enabled, relaunch on the affected Wi-Fi, then capture the repository detail result. Compare with an explicit individual APK inspection on the same network."
+            test "$version" = 0.9.1
+            test "$code" = 18
+            title="legacy Android TLS compatibility"
+            details="PR #13 keeps system trust and adds the fingerprint-pinned official ISRG Root X1 for AppDate HTTPS on Android 6/7 without trusting arbitrary user CAs or disabling hostname, expiry, signature, redirect, or cleartext checks. Install over the existing AppDate on Z4T and a Z3TC without manually adding that CA; confirm registration, PAT, history, saved APKs, Wi-Fi limits, automatic download, and explicit APK inspection remain intact."
           elif [[ "$GITHUB_REF_NAME" == work/forgejo-provider ]]; then
-            test "$version" = 0.9.0
-            test "$code" = 17
-            title="GitHub and Forgejo multi-source preview"
-            details="Adds approved Forgejo connections, owner-scoped PAT discovery, explicit bulk approval, app identity by package and signer, version-first source selection, digest-gated fallback, and automatic recovery to the stored priority. Includes the accepted PR #12 startup summary and PR #13 Android 7 diagnostics as stacked dependencies."
+            test "$version" = 0.9.2
+            test "$code" = 19
+            title="Forgejo conflict choice and legacy TLS integration"
+            details="Keeps the accepted Forgejo owner discovery and GitHub integration, adds version-and-digest-bound explicit choice for independently built equal-version APKs, preserves known app data while blocking unresolved automatic or manual downloads, removes registration results from the top screen, and integrates PR #13 legacy Android TLS compatibility. Install over 0.9.0 or 0.9.1 and verify the existing registrations, PATs, history, saved APKs, priorities, Wi-Fi limits, conflict choice, fallback, recovery, and Z4T/Z3TC TLS paths."
           fi
           apk_source=$(jq -er .sourceSha delivery/manifest.json)
           export PREVIEW_SOURCE="$GITHUB_SHA"

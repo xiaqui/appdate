@@ -66,7 +66,7 @@ internal fun completeRepoImport(
     refresh: (String) -> Boolean
 ) = ImportCompletion(refreshAddedRepos(report.addedRepos, refresh), returnHome)
 
-internal class GitHubRepos(private val connect: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }) {
+internal class GitHubRepos(private val connect: (URL) -> HttpURLConnection = TlsCompatibility::open) {
     fun page(token: String, page: Int): RepoPage {
         val url = URL("https://api.github.com/user/repos?visibility=all&affiliation=owner,collaborator,organization_member&sort=full_name&direction=asc&per_page=100&page=$page")
         val connection = connect(url)
@@ -86,7 +86,7 @@ internal class GitHubRepos(private val connect: (URL) -> HttpURLConnection = { i
     }
 }
 
-internal class GitHubApkReleases(private val connect: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }) {
+internal class GitHubApkReleases(private val connect: (URL) -> HttpURLConnection = TlsCompatibility::open) {
     fun page(token: String, repo: RemoteRepo, page: Int): ApkReleasePage {
         val name = remoteRepoName(repo.name)
         val connection = connect(URL("https://api.github.com/repos/$name/releases?per_page=100&page=$page"))

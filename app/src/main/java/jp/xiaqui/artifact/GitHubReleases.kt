@@ -31,7 +31,7 @@ private inline fun <T> assetNetworkOperation(stage: String, operation: () -> T):
 }
 
 internal class GitHubReleases(private val auth: ReleaseAuth,
-    private val connect: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }) {
+    private val connect: (URL) -> HttpURLConnection = TlsCompatibility::open) {
 
     private fun <T> read(link: ReleaseLink, endpoint: String, binary: Boolean, consume: (InputStream) -> T): T {
         var url = URL(endpoint)

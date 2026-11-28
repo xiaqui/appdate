@@ -53,7 +53,7 @@ internal class GitHubProvider(private val api: GitHubReleases) : ReleaseProvider
 /** Forgejo v1 API adapter. Tokens are scoped to one normalized server and are never sent to redirects. */
 internal class ForgejoProvider(
     private val token: (String) -> String?,
-    private val connect: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }
+    private val connect: (URL) -> HttpURLConnection = TlsCompatibility::open
 ) : ReleaseProvider {
     private fun api(source: DistributionSource) = normalizeServer(source.server) + "/api/v1/repos/" + source.repository
 
@@ -235,7 +235,7 @@ internal class ForgejoDiscovery(
     private val server: String,
     private val owner: String,
     private val token: String,
-    private val connect: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }
+    private val connect: (URL) -> HttpURLConnection = TlsCompatibility::open
 ) {
     private val base = normalizeServer(server)
     init {
