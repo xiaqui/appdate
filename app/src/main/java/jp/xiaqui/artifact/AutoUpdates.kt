@@ -56,6 +56,9 @@ internal fun approvedManualCandidates(rows: List<Registration>, approved: Map<St
     asset != null && approved[r.repo]==asset.identity()
 }
 
+internal fun unchangedRegistration(initial: Registration, current: Registration?) =
+    current != null && current.revision == initial.revision
+
 internal data class NetworkState(val connected: Boolean, val wifi: Boolean)
 internal fun networkState(context: Context): NetworkState {
     val manager=context.getSystemService(ConnectivityManager::class.java)
@@ -64,12 +67,15 @@ internal fun networkState(context: Context): NetworkState {
         caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true)
 }
 internal fun downloadAllowed(network: NetworkState, wifiOnly: Boolean, override: Boolean) = network.connected && (!wifiOnly || network.wifi || override)
+internal fun automaticInspectionAllowed(downloadEnabled: Boolean, network: NetworkState) =
+    downloadEnabled && downloadAllowed(network, wifiOnly = true, override = false)
 
 internal object AutoUpdates {
     private const val JOB=42042
     private const val CHANNEL="prepared-updates"
     private const val NOTICE=42043
     val running=AtomicBoolean(false)
+    private val startupRequests=CoalescedRequests()
     private val checkedFiles=java.util.concurrent.ConcurrentHashMap<String,String>()
     private fun key(repo: String, a: ReleaseApk) = "$repo:${a.identity()}"
     private fun stamp(file: java.io.File) = "${file.name}:${file.length()}:${file.lastModified()}"
@@ -86,11 +92,18 @@ internal object AutoUpdates {
     fun startup(context: Context) {
         val app=context.applicationContext
         schedule(app)
+        if (startupRequests.request()) startStartupWorker(app)
+    }
+    private fun startStartupWorker(app: Context) {
         executor.submit {
-            runCatching { reconcile(app) }
-            val settings=AutoSettings(app)
-            if (settings.startupEnabled && startupDue(settings.prefs.getLong("attempt",0),System.currentTimeMillis()))
-                run(app, AutoTrigger.STARTUP)
+            try {
+                while (startupRequests.consume()) {
+                    runCatching { reconcile(app) }
+                    if (AutoSettings(app).startupEnabled) run(app, AutoTrigger.STARTUP)
+                }
+            } finally {
+                if (startupRequests.releaseAndReacquireIfPending()) startStartupWorker(app)
+            }
         }
     }
     fun reconcileAsync(context: Context) { val app=context.applicationContext; executor.submit { runCatching { reconcile(app) } } }
@@ -127,17 +140,44 @@ internal object AutoUpdates {
         val manual=trigger==AutoTrigger.MANUAL
         val prefs=settings.prefs
         var success=0; var failures=0; var held=0; var inspected=0
+        var batchRun: BatchRun? = null
         try {
+            synchronized(updateCheckLock) {
             if (!enabled(settings,trigger)) return
             prefs.edit().putLong("attempt",System.currentTimeMillis()).putString("summary","前回処理は未完了・再試行可能").commit()
             val catalog=Catalog(context); val service=StoreService(context,catalog)
             val repos=if (manual) approvedManualCandidates(manualCandidates(context),approved.orEmpty()).map { it.repo }
                 else catalog.names()
+            if (!manual) batchRun=BatchResults(context).begin(
+                if (trigger==AutoTrigger.STARTUP) CheckMethod.STARTUP else CheckMethod.PERIODIC, repos.size)
             for(repo in repos) {
                 if(Thread.currentThread().isInterrupted || !enabled(settings,trigger)) throw InterruptedException()
-                val initial=catalog.get(repo) ?: continue
-                if(!manual) service.refresh(initial, inspectApks = false)
-                val r=catalog.get(repo) ?: continue
+                val initial=catalog.get(repo)
+                if (initial == null) {
+                    failures++; inspected++
+                    if (!manual) batchRun?.record(null)
+                    prefs.edit().putString("repo:$repo","登録が確認中に変更されました。")
+                        .putString("summary","確認 $inspected/${repos.size} · 取得 $success / 失敗 $failures / 保留 $held\n$repo · 登録変更").commit()
+                    continue
+                }
+                val successBefore=success; val failuresBefore=failures; val heldBefore=held
+                if(!manual) {
+                    val inspectApks=automaticInspectionAllowed(settings.downloadEnabled,networkState(context))
+                    service.refresh(initial,inspectApks) {
+                        if (Thread.currentThread().isInterrupted || !enabled(settings,trigger)) throw InterruptedException()
+                        if (!settings.downloadEnabled) throw UpdateDeferred("自動取得を停止しました。")
+                        if (!automaticInspectionAllowed(true,networkState(context)))
+                            throw UpdateDeferred("Wi-Fi待ち・通信切断のためAPK解析を保留しました。")
+                    }
+                }
+                val r=catalog.get(repo)
+                if (r == null || !unchangedRegistration(initial, r)) {
+                    failures++; inspected++
+                    if (!manual) batchRun?.record(null)
+                    prefs.edit().putString("repo:$repo","登録が確認中に変更されました。")
+                        .putString("summary","確認 $inspected/${repos.size} · 取得 $success / 失敗 $failures / 保留 $held\n$repo · 登録変更").commit()
+                    continue
+                }
                 var outcome="メタデータ確認済み"
                 if(r.error.isNotEmpty()) { failures++; outcome=r.error }
                 else if (manual || settings.downloadEnabled) {
@@ -158,6 +198,14 @@ internal object AutoUpdates {
                         outcome=storeError(e)
                     }
                 }
+                val final=catalog.get(repo)
+                if (!unchangedRegistration(initial, final)) {
+                    success=successBefore; held=heldBefore; failures=failuresBefore+1
+                    outcome="登録が確認中に変更されました。"
+                    if (!manual) batchRun?.record(null)
+                } else if (!manual) batchRun?.record(final?.let {
+                    rowFor(it, Installation.absenceKnown(context), Build.VERSION.SDK_INT) { pkg -> Installation.installed(context,pkg) }
+                })
                 prefs.edit().putString("repo:$repo",outcome).commit()
                 inspected++
                 prefs.edit().putString("summary","確認 $inspected/${repos.size} · 取得 $success / 失敗 $failures / 保留 $held\n$repo · $outcome").commit()
@@ -167,8 +215,11 @@ internal object AutoUpdates {
                 (if(held>0 || failures>0) "\n"+prefs.getString("summary","") else ""))
             if(failures==0 && held==0) change.putLong("success",System.currentTimeMillis())
             change.commit()
+            batchRun?.complete()
             reconcile(context)
+            }
         } catch(e: Exception) {
+            batchRun?.fail(e)
             prefs.edit().putString("summary","未完了 · 取得 $success / 失敗 $failures / 保留 $held\n"+
                 if(e is InterruptedException) "中断しました。保存済みAPKは保持します。" else storeError(e)).commit()
         } finally { running.set(false); prefs.edit().putLong("finished",System.currentTimeMillis()).commit() }

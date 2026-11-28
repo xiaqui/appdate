@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AutoUpdateTest {
+    @Test fun registrationRevisionMustRemainStableDuringCheck() {
+        val initial=Registration("a/b",false,"one")
+        assertTrue(unchangedRegistration(initial,initial))
+        assertFalse(unchangedRegistration(initial,null))
+        assertFalse(unchangedRegistration(initial,initial.copy(revision="two")))
+    }
+
     private val installed=ApkInfo("pkg","Old Name","2",2,"AA",ApkSdk(23,35))
     private fun row(code: Long, auto: Boolean=true, pending: Boolean=false) = RetainedApk("pkg~$code.apk","pkg",code,"AA",100,code,auto,pending,true)
     @Test fun cleanupOnlyRemovesOldAutoAndKeepsRecoveryAndPending() {
@@ -52,13 +59,38 @@ class AutoUpdateTest {
         assertTrue(downloadAllowed(NetworkState(true,false),true,true))
         assertTrue(downloadAllowed(NetworkState(true,true),true,false))
         assertFalse(downloadAllowed(NetworkState(false,false),false,true))
-        assertFalse(startupDue(1000,1001)); assertTrue(startupDue(1000,1000+15*60*1000))
-        assertTrue(startupDue(0,1000)); assertTrue(startupDue(1000,1))
+        assertTrue(automaticInspectionAllowed(true,NetworkState(true,true)))
+        assertFalse(automaticInspectionAllowed(false,NetworkState(true,true)))
+        assertFalse(automaticInspectionAllowed(true,NetworkState(true,false)))
+        assertFalse(automaticInspectionAllowed(true,NetworkState(false,false)))
     }
     @Test fun independentSwitchMigrationPreservesExplicitLegacyOffs() {
         assertEquals(AutoPreferences(true,false,true),migrateAutoPreferences(paused=false,download=true))
         assertEquals(AutoPreferences(true,false,false),migrateAutoPreferences(paused=false,download=false))
         assertEquals(AutoPreferences(false,false,false),migrateAutoPreferences(paused=true,download=true))
+    }
+    @Test fun startupCheckRunsOncePerLaunchOrExternalReturnButNotForRedraw() {
+        val gate=ForegroundGate()
+        assertTrue(gate.started())
+        assertFalse(gate.started())
+        gate.stopped(changingConfiguration=false)
+        gate.stopped(changingConfiguration=false)
+        assertTrue(gate.started())
+        gate.stopped(changingConfiguration=true)
+        assertFalse(gate.started())
+    }
+    @Test fun startupRequestsCoalesceButNeverLoseARequestDuringWork() {
+        val requests=CoalescedRequests()
+        assertTrue(requests.request())
+        assertFalse(requests.request())
+        assertTrue(requests.consume())
+        assertFalse(requests.consume())
+        assertFalse(requests.request())
+        assertTrue(requests.consume())
+        assertFalse(requests.releaseAndReacquireIfPending())
+        assertTrue(requests.request())
+        assertFalse(requests.request())
+        assertTrue(requests.releaseAndReacquireIfPending())
     }
     @Test fun renamedLabelsRemainSamePackageButNewPackageNeverUpdates() {
         val changed=installed.copy(label="New Label",code=3)

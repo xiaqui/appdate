@@ -1,7 +1,8 @@
 name: Personal Release Store
 on:
   push:
-    branches: ['work/auto-update-notify']
+    # Keep this trigger and the reuse query on the same TASK branch.
+    branches: ['work/startup-refresh-summary']
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -14,6 +15,11 @@ on:
         type: string
       full_matrix:
         description: 'Also run Android 11, 12, 13 and 15'
+        required: false
+        default: false
+        type: boolean
+      force_device:
+        description: 'Run device jobs even when source-identical successful results can be reused'
         required: false
         default: false
         type: boolean
@@ -53,7 +59,7 @@ jobs:
               jq -e '[.artifacts[] | select(.name == "verified-preview-bundle" and (.expired | not))] | length == 1' <<<"$artifacts" >/dev/null || continue
               reuse_run_id=$candidate
               break
-            done < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?branch=work%2Fauto-update-notify&status=completed&per_page=100" --jq '.workflow_runs[].id')
+            done < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?branch=work%2Fstartup-refresh-summary&status=completed&per_page=100" --jq '.workflow_runs[].id')
           fi
           if [[ -n "$reuse_run_id" ]]; then
             [[ "$reuse_run_id" =~ ^[0-9]+$ ]]
@@ -124,6 +130,7 @@ jobs:
           cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk delivery/ReleaseStore-preview-androidTest.apk
           python3 .github/release/write-bundle-manifest.py | tee -a "$GITHUB_STEP_SUMMARY"
           python3 .github/release/validate-bundle.py --require-current-source
+          python3 .github/release/device-result-identity.py "$GITHUB_SHA" "$GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
           name: verified-preview-bundle
@@ -135,6 +142,10 @@ jobs:
     if: needs.plan.outputs.reuse_run_id != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      device_reused: ${{ steps.device_result.outputs.reused }}
+      device_run_id: ${{ steps.device_result.outputs.run_id }}
+      device_identity: ${{ steps.device_result.outputs.identity }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -146,6 +157,8 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$REUSE_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_RUN_ID" --jq .conclusion \
+            | grep -Fx success
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_RUN_ID/jobs?per_page=100" \
             --jq '[.jobs[] | select(.name == "verify" and .conclusion == "success")] | length' \
             | grep -Fx 1
@@ -158,6 +171,58 @@ jobs:
           github-token: ${{ github.token }}
       - name: Validate reusable bundle against current application source
         run: python3 .github/release/validate-bundle.py --require-current-source
+      - id: device_result
+        name: Reuse source-identical successful device results when safe
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_RUN_ID: ${{ needs.plan.outputs.reuse_run_id }}
+          FULL_MATRIX: ${{ inputs.full_matrix == true || contains(github.event.head_commit.message, '[full-matrix]') }}
+          FORCE_DEVICE: ${{ inputs.force_device == true }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          reused=false
+          reason="device results require a fresh run"
+          apk_source=$(jq -er .sourceSha delivery/manifest.json)
+          apk_digest=$(jq -er .apk.sha256 delivery/manifest.json)
+          run_sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_RUN_ID" --jq .head_sha)
+          jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_RUN_ID/jobs?per_page=100")
+          identity=
+          if [[ "$FULL_MATRIX" == true ]]; then
+            reason="full_matrix requested"
+          elif [[ "$FORCE_DEVICE" == true ]]; then
+            reason="force_device requested"
+          elif [[ "$run_sha" != "$apk_source" ]]; then
+            reason="source run head does not match bundle source"
+          elif spec=$(python3 .github/release/device-result-identity.py "$apk_source" "$GITHUB_SHA"); then
+            identity=$(jq -er .currentIdentity <<<"$spec")
+            all_ok=true
+            for api in 23 29 34; do
+              jq -e --arg name "device ($api)" \
+                '[.jobs[] | select(.name == $name and .conclusion == "success")] | length == 1' \
+                <<<"$jobs" >/dev/null || all_ok=false
+            done
+            if [[ "$all_ok" == true ]]; then
+              reused=true
+              reason="same APK and device test conditions; API 23/29/34 succeeded in source run"
+            else
+              reason="source run lacks a successful API 23/29/34 device result"
+            fi
+          else
+            reason="device test conditions changed"
+          fi
+          echo "reused=$reused" >> "$GITHUB_OUTPUT"
+          echo "run_id=$REUSE_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Device result reuse"
+            echo "- Reuse source run: $REUSE_RUN_ID"
+            echo "- APK source: $apk_source"
+            echo "- APK SHA-256: $apk_digest"
+            echo "- Device condition identity: ${identity:-not reusable}"
+            echo "- API 23/29/34 result reused: $reused"
+            echo "- Decision: $reason"
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
           name: verified-preview-bundle
@@ -165,8 +230,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   device:
+    # Source-identical API 23/29/34 results are reused only after the reuse job verifies their test identity.
     needs: [verify, reuse]
-    if: always() && (needs.verify.result == 'success' || needs.reuse.result == 'success')
+    if: always() && (needs.verify.result == 'success' || needs.reuse.result == 'success') && needs.reuse.outputs.device_reused != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -203,7 +269,7 @@ jobs:
 
   preview:
     needs: [verify, reuse, device]
-    if: always() && needs.device.result == 'success' && (needs.verify.result == 'success' || needs.reuse.result == 'success') && github.ref == 'refs/heads/work/auto-update-notify' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
+    if: always() && (needs.device.result == 'success' || needs.reuse.outputs.device_reused == 'true') && (needs.verify.result == 'success' || needs.reuse.result == 'success') && github.ref == 'refs/heads/work/startup-refresh-summary' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-preview]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -213,7 +279,7 @@ jobs:
         with:
           name: verified-preview-bundle
           path: delivery
-      - name: Verify Release Asset and publish automatic-update preview
+      - name: Verify Release Asset and publish startup-refresh preview
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -231,7 +297,7 @@ jobs:
           sha=$(sha256sum "$apk" | cut -d' ' -f1)
           state=$(python .github/release/check-preview.py)
           if [[ "$state" == absent ]]; then
-            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$PREVIEW_SOURCE" --draft --prerelease --title "AppDate $version · automatic updates" --notes "PR #6 automatic-update preview $version ($code), including Issue #8 independent switches. APK source: $apk_source. CI workflow head: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. Device acceptance pending; not for silent installation. Issue #9, pull-to-refresh, naming overhaul and UI redesign are not included."
+            gh release create "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" --target "$PREVIEW_SOURCE" --draft --prerelease --title "AppDate $version · startup refresh summary" --notes "Startup refresh and shared automatic/manual summary preview $version ($code). APK source: $apk_source. CI workflow head: $GITHUB_SHA. APK SHA-256: $sha. Same fixed xiaqui signing certificate. Device acceptance pending; not for silent installation. Issue #9, pull-to-refresh, naming overhaul and UI redesign are not included."
           fi
           asset=$(basename "$apk")
           if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PREVIEW_TAG" --jq '.assets[].name' | grep -Fxq "$asset"; then
