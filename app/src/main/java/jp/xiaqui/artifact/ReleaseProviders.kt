@@ -118,8 +118,17 @@ internal class ForgejoProvider(
         allowed()
         val url = URL(apk.downloadUrl)
         val origin = URI(normalizeServer(source.server))
+        val basePath = origin.path.trimEnd('/')
+        val repositoryPath = source.repository.split('/').joinToString("/") { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+        val rawPath = runCatching { url.toURI().rawPath }.getOrNull().orEmpty()
+        val allowedPaths = listOf(
+            "$basePath/attachments/",
+            "$basePath/$repositoryPath/releases/download/",
+            "$basePath/api/v1/repos/$repositoryPath/releases/assets/"
+        )
         if (url.protocol != "https" || !url.host.equals(origin.host, true) || url.port !in listOf(-1,443) ||
-            url.userInfo != null || !url.path.startsWith(origin.path.trimEnd('/') + "/attachments/"))
+            url.userInfo != null || rawPath.contains("\\") || rawPath.split('/').any { it in listOf(".", "..") } ||
+            allowedPaths.none(rawPath::startsWith))
             throw ImportFailure("Forgejo APKの取得URLを検証できません。")
         val connection = connect(url)
         try {

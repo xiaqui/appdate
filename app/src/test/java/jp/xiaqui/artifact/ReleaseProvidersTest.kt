@@ -100,4 +100,22 @@ class ReleaseProvidersTest {
             assertThrows(ImportFailure::class.java) { provider.download(source, apk, target) }
         } finally { target.delete() }
     }
+
+    @Test fun forgejoDownloadAcceptsStandardReleasePathOnThePinnedRepository() {
+        val source = source("forge", 0)
+        val body = "apk"
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(body.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        val apk = ReleaseApk(1, "app.apk", 3, digest, sourceKey = source.key,
+            downloadUrl = "https://forge.example/sub/owner/repo0/releases/download/v1/app.apk")
+        val target = File.createTempFile("forgejo-provider-", ".apk")
+        try {
+            ForgejoProvider({ "token" }) { url -> Reply(url, 200, body) }.download(source, apk, target)
+            assertEquals(body, target.readText())
+            assertThrows(ImportFailure::class.java) {
+                ForgejoProvider({ "token" }) { url -> Reply(url, 200, body) }.download(source,
+                    apk.copy(downloadUrl = "https://forge.example/sub/other/repo/releases/download/v1/app.apk"), target)
+            }
+        } finally { target.delete() }
+    }
 }

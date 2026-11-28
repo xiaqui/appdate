@@ -152,6 +152,9 @@ internal class Catalog(context: Context) {
         sources(registration).flatMap { it.inspected.values }.any { it.pkg == pkg && it.signer.isNotBlank() && it.signer == signer }
     }
 
+    fun findSource(key: String): Registration? = names().mapNotNull(::get)
+        .firstOrNull { registration -> sources(registration).any { it.key == key } }
+
     fun addSource(existing: Registration?, source: DistributionSource, app: ApkInfo, previews: Boolean = true): Registration = synchronized(lock) {
         requireIdle()
         if (app.signer.isBlank()) throw ImportFailure("APKの署名を確認できない配布元は統合できません。")
@@ -159,10 +162,15 @@ internal class Catalog(context: Context) {
         if (target != null) {
             val current = get(target.repo) ?: throw ImportFailure("統合先が変更されました。候補を再取得してください。")
             val rows = sources(current)
-            if (rows.any { it.key == source.key }) return@synchronized current
+            val knownApps = rows.flatMap { it.inspected.values }
+            if (knownApps.none { it.pkg == app.pkg && it.signer.isNotBlank() && it.signer == app.signer })
+                throw ImportFailure("統合先のアプリ同一性が変わりました。候補を再取得してください。")
             if (rows.flatMap { it.inspected.values }.any { it.pkg == app.pkg && it.signer.isNotBlank() && it.signer != app.signer })
                 throw ImportFailure("同じpackageNameの署名が一致しないため統合を保留しました。")
-            val updated = current.copy(revision = UUID.randomUUID().toString(), sources = rows + source)
+            val prior = rows.firstOrNull { it.key == source.key }
+            val replacement = prior?.let { source.copy(priority = it.priority, approved = it.approved) } ?: source
+            val updatedRows = if (prior == null) rows + replacement else rows.map { if (it.key == source.key) replacement else it }
+            val updated = current.copy(revision = UUID.randomUUID().toString(), sources = updatedRows)
             if (!prefs.edit().putString(current.repo, CatalogCodec.encode(updated)).commit())
                 throw ImportFailure("配布元を保存できません。既存登録は保持しています。")
             return@synchronized updated

@@ -156,16 +156,25 @@ internal class StoreService(private val context: Context, val catalog: Catalog,
         history = history.map { row -> row.copy(assets = row.assets.map { if (it.id == asset.id) verified else it }) }
         source = source.copy(inspected = mapOf(verified.identity() to info), checked = System.currentTimeMillis(),
             fetched = System.currentTimeMillis(), history = history)
-        val existing = catalog.findApp(info.pkg, info.signer)
-        if (existing?.let { catalog.sources(it).any { known -> known.key == source.key } } == true) return null
+        val existing = catalog.findSource(source.key) ?: catalog.findApp(info.pkg, info.signer)
+        val knownSource = existing?.let { catalog.sources(it).firstOrNull { known -> known.key == source.key } }
+        if (knownSource != null && knownSource.repository == source.repository && knownSource.authKey == source.authKey) return null
         return ForgejoCandidate(source, info, existing?.repo)
     }
 
-    fun approveForgejo(candidates: List<ForgejoCandidate>): List<Registration> = candidates.map { candidate ->
-        val existing = candidate.existingRepo?.let(catalog::get)
-        val priority = if (existing == null) 0 else 0
-        val source = candidate.source.copy(priority = priority, approved = true)
-        catalog.addSource(existing, source, candidate.info)
+    fun approveForgejo(candidates: List<ForgejoCandidate>): List<Registration> {
+        val approved = mutableListOf<Registration>()
+        val failed = mutableListOf<String>()
+        candidates.forEach { candidate ->
+            try {
+                val existing = candidate.existingRepo?.let(catalog::get)
+                approved += catalog.addSource(existing, candidate.source.copy(priority = 0, approved = true), candidate.info)
+            } catch (e: Exception) {
+                failed += "${candidate.source.repository}: ${storeError(e)}"
+            }
+        }
+        if (failed.isNotEmpty()) throw ImportFailure("Forgejo配布元 ${approved.size} 件を承認済み / ${failed.size} 件を保留\n" + failed.joinToString("\n"))
+        return approved
     }
 
     private fun refreshSources(r: Registration, inspectApks: Boolean, inspectAllowed: () -> Unit) {
