@@ -4,6 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.File
 
 class ReleaseProvidersTest {
     private val app = ApkInfo("jp.example.app", "Example", "1", 1, "AA")
@@ -87,5 +88,16 @@ class ReleaseProvidersTest {
         assertEquals("token secret-token", requests.single().getRequestProperty("Authorization"))
         assertThrows(ImportFailure::class.java) { api.repository("other/private") }
         assertThrows(ImportFailure::class.java) { api.repository("https://evil.example/sugi/private") }
+    }
+
+    @Test fun forgejoDownloadRejectsBytesThatDoNotMatchApprovedDigest() {
+        val source = source("forge", 0)
+        val apk = ReleaseApk(1, "app.apk", 3, "0".repeat(64), sourceKey = source.key,
+            downloadUrl = "https://forge.example/sub/attachments/app.apk")
+        val target = File.createTempFile("forgejo-provider-", ".apk")
+        try {
+            val provider = ForgejoProvider({ "token" }) { url -> Reply(url, 200, "apk") }
+            assertThrows(ImportFailure::class.java) { provider.download(source, apk, target) }
+        } finally { target.delete() }
     }
 }

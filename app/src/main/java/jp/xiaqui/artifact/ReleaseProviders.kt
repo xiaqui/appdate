@@ -137,6 +137,9 @@ internal class ForgejoProvider(
             }
             val count = target.outputStream().use { transfer(DigestInputStream(guarded, sha), it, apk.size) }
             if (count != apk.size) throw ImportFailure("Forgejo APKの取得が途中で終了しました。")
+            val digest = sha.digest().joinToString("") { "%02x".format(it) }
+            if (apk.digest != null && !digest.equals(apk.digest, true))
+                throw ImportFailure("Forgejo APKのSHA-256が確認済み内容と一致しません。")
             }
         } finally { connection.disconnect() }
     }
