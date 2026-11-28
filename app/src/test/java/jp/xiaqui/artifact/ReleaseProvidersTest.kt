@@ -13,7 +13,7 @@ class ReleaseProvidersTest {
         val asset = ReleaseApk(priority.toLong() + 1, "app.apk", 10, digest, sourceKey = key)
         val release = StoreRelease(priority.toLong() + 10, "v$code", "2026", false, listOf(asset), sourceKey = key)
         return DistributionSource(key, if (key.startsWith("gh")) PROVIDER_GITHUB else PROVIDER_FORGEJO,
-            if (key.startsWith("gh")) "https://github.com" else "https://forge.example/sub", priority + 1,
+            if (key.startsWith("gh")) "https://github.com" else "https://forge.example/sub", priority.toLong() + 1,
             "owner/repo$priority", priority, history = listOf(release), inspected = mapOf(asset.identity() to app.copy(code = code, signer = signer)), error = error)
     }
 
