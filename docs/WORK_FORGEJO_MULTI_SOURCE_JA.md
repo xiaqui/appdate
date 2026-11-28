@@ -32,6 +32,13 @@ GitHub Releasesだけだった既存登録を壊さず、Forgejo v1 APIのReleas
 
 会社Forgejoの実URL、Forgejo major version、証明書チェーン、PAT scope設定は公開repoへ記録しない。CIは人工fixtureで検証し、実サーバー接続・private repo取得・実機上書きは社長の検収項目として分離する。
 
+## CI・レビュー結果
+
+- 実装・テストhead `d01363e8ba6db6e755615ddcb31714e4966e6310` をActions run [#46101200271](https://github.com/xiaqui/appdate/actions/runs/46101200271) で検証した。unit/lint/署名済みpreview生成と、API 23/24/29/34のdevice検証はすべて成功した。
+- API 29で一度、通知発行直後の非同期反映を待たずに通知一覧を読んで失敗する既存PR #12由来のテスト競合が再現した。対象通知IDを5秒上限で待つよう修正し、同じ4 APIで再検証した。アプリ本体の通知処理は変更していない。
+- 独立レビューは、標準Forgejo Asset URL境界、tokenのorigin固定、repo改名時のrepository ID照合、承認時再検証、部分成功・中断、同版digest競合、障害時の同一digest代替と復旧を再確認した。残るP0/P1/P2はない。
+- 配送コミットは文書とworkflowだけを変更する。run #46101200271の成功済みbundleについて、参照run成功、source identity、APK SHA-256、署名、applicationId、versionCodeとAPI 23/24/29/34結果を再検証し、verify/deviceを省略した場合だけpreviewを公開する。不一致・期限切れ・不足時は安全に停止する。
+
 ## 検収項目
 
 1. 既存0.8.4へ上書きし、GitHub登録、共通/個別PAT、履歴、保存APK、自動更新設定が残る。

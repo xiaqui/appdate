@@ -6,6 +6,7 @@ on:
       - '**/*.md'
       - 'docs/**'
   # Preview delivery requires a deliberate [publish-preview] commit or manual dispatch after all gates.
+  # A documentation/workflow-only delivery commit must reuse the exact verified bundle and matching device results.
   workflow_dispatch:
     inputs:
       reuse_run_id:
