@@ -131,6 +131,32 @@ class ReleaseTest {
         assertNull(requests.last().getRequestProperty("Authorization"))
     }
 
+    @Test fun assetTransportFailureReportsRedirectStageWithoutExceptionDetail() {
+        val cause = javax.net.ssl.SSLHandshakeException("https://cdn.example.test/signed?fixture-secret")
+        val api = GitHubReleases(auth) { url ->
+            if (url.host == "api.github.com") {
+                Exchange(url, Reply(302, redirect = "https://cdn.example.test/signed"))
+            } else {
+                throw cause
+            }
+        }
+        val apk = ReleaseApk(5, "demo.apk", 3, null)
+        val failure = assertThrows(AssetConnectionFailure::class.java) { api.download(link, apk, temp.newFile()) }
+        assertEquals("APK通信失敗（APK転送先・TLS）。", storeError(failure))
+        assertSame(cause, failure.cause)
+    }
+
+    @Test fun wifiDeferralRemainsDistinctFromAssetTransportFailure() {
+        val deferred = UpdateDeferred("Wi-Fi待ち")
+        val api = service(Reply(200, "abc"))
+        val apk = ReleaseApk(5, "demo.apk", 3, null)
+        var checks = 0
+        val failure = assertThrows(UpdateDeferred::class.java) {
+            api.download(link, apk, temp.newFile()) { if (++checks == 2) throw deferred }
+        }
+        assertSame(deferred, failure)
+    }
+
     @Test fun rejectsAuthFailureDowngradeTruncationAndWrongDigest() {
         assertThrows(ImportFailure::class.java) { service(Reply(404)).assets(link) }
         val apk = ReleaseApk(5,"demo.apk",3,null)

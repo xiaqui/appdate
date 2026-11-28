@@ -20,15 +20,18 @@ class StoreActivity : Activity() {
     private lateinit var catalog: Catalog
     private lateinit var service: StoreService
     private lateinit var panel: LinearLayout
+    private lateinit var scroller: ScrollView
     private val executor = Executors.newSingleThreadExecutor()
     private var selected: String? = null
     private var releaseId: Long? = null
     private val vault by lazy { StoredAuth(this) }
-    private val batch by lazy { getSharedPreferences("batch-result", MODE_PRIVATE) }
+    private val batch by lazy { BatchResults(this) }
+    private val batchPrefs by lazy { getSharedPreferences("batch-result", MODE_PRIVATE) }
     private val imports by lazy { getSharedPreferences("repo-import-result", MODE_PRIVATE) }
     private val automatic by lazy { AutoSettings(this) }
-    private val autoListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        runOnUiThread { if (!isDestroyed && !isFinishing && !busy) render() }
+    private val batchListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+        if (key == "phase" && prefs.getString("phase", "") != CheckPhase.RUNNING.name)
+            runOnUiThread { if (!isDestroyed && !isFinishing && !busy && !settings && !shelf && selected == null) renderPreservingScroll() }
     }
     private var busy = false
     private var settings = false
@@ -55,22 +58,30 @@ class StoreActivity : Activity() {
         out.putBoolean("settings", settings)
         out.putBoolean("shelf", shelf)
     }
+    override fun onStart() {
+        super.onStart()
+        if (appForeground.started()) AutoUpdates.startup(this)
+    }
     override fun onResume() {
         super.onResume()
-        automatic.prefs.registerOnSharedPreferenceChangeListener(autoListener)
-        if (!busy) render()
-        AutoUpdates.startup(this)
+        batchPrefs.registerOnSharedPreferenceChangeListener(batchListener)
+        if (!busy) renderPreservingScroll()
     }
     override fun onPause() {
-        automatic.prefs.unregisterOnSharedPreferenceChangeListener(autoListener)
+        batchPrefs.unregisterOnSharedPreferenceChangeListener(batchListener)
         super.onPause()
+    }
+    override fun onStop() {
+        appForeground.stopped(isChangingConfigurations)
+        super.onStop()
     }
     override fun onDestroy() { executor.shutdownNow(); super.onDestroy() }
 
     private fun page(heading: String) {
         title = "Release Store"
         panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad,pad,pad,pad) }
-        setContentView(ScrollView(this).apply { addView(panel) })
+        scroller = ScrollView(this).apply { addView(panel) }
+        setContentView(scroller)
         label(heading, true)
     }
     private fun label(value: String, heading: Boolean = false) {
@@ -168,14 +179,21 @@ class StoreActivity : Activity() {
     }
 
     private fun checkAll(repos: List<String>) {
-        // Only finished results are durable. A restart during this run must not imply completion.
-        batch.edit().putString("summary", "前回の一括確認は未完了").commit()
         work("一括更新を確認中…", {
-            val summary = batchSummary(repos) { repo ->
-                catalog.get(repo)?.let(service::refresh)
-                catalog.get(repo)?.let(::row)
+            synchronized(updateCheckLock) {
+                val report = batch.begin(CheckMethod.MANUAL, repos.size)
+                try {
+                    for (repo in repos) {
+                        if (Thread.currentThread().isInterrupted) throw InterruptedException()
+                        catalog.get(repo)?.let(service::refresh)
+                        report.record(catalog.get(repo)?.let(::row))
+                    }
+                    report.complete()
+                } catch (e: Exception) {
+                    report.fail(e)
+                    throw e
+                }
             }
-            batch.edit().putString("summary", summary).commit()
         })
     }
 
@@ -285,9 +303,15 @@ class StoreActivity : Activity() {
                 else begin(false)
             }
         })
-        batch.getString("summary", null)?.let { label(it) }
+        batch.display()?.let { label(it) }
         imports.getString("summary", null)?.let { label(it) }
         itemsPage(registrations) { repo -> catalog.get(repo)?.let(::addRow) }
+    }
+
+    private fun renderPreservingScroll() {
+        val oldY = if (::scroller.isInitialized) scroller.scrollY else 0
+        render()
+        scroller.post { if (!isDestroyed && !isFinishing) scroller.scrollTo(0, oldY) }
     }
 
     private fun edit(r: Registration?) {

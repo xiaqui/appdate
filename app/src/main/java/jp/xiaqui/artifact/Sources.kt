@@ -63,7 +63,7 @@ internal class DirectHttps : RemoteSource {
             if (!next.protocol.equals("https", true) || next.userInfo != null || next.host.isEmpty())
                 throw ImportFailure("認証情報を含まないHTTPSリンクを指定してください。")
             if (GitHubAccess.needsBrowser(next)) throw ImportFailure("GitHubにサインインしたブラウザでArtifactを保存し、「ZIP / APK を開く」で選んでください。")
-            val connection = next.openConnection() as HttpURLConnection
+            val connection = TlsCompatibility.open(next)
             try {
                 connection.instanceFollowRedirects = false
                 connection.connectTimeout = 10000

@@ -5,6 +5,7 @@ import java.io.File
 
 internal fun storeError(e: Exception) = when {
     e is UpdateDeferred -> e.message ?: "取得を保留しました。"
+    e is AssetConnectionFailure -> e.message.orEmpty()
     e is ImportFailure -> e.message ?: "APK取得失敗"
     e is java.util.zip.ZipException -> "破損APKです。"
     e is java.net.SocketTimeoutException || e is java.net.UnknownHostException -> "通信失敗。接続を確認し再試行してください。"
@@ -36,14 +37,14 @@ internal class StoreService(private val context: Context, val catalog: Catalog,
         } finally { staged.delete() }
     }
 
-    fun refresh(r: Registration, inspectApks: Boolean = true) {
+    fun refresh(r: Registration, inspectApks: Boolean = true, inspectAllowed: () -> Unit = {}) {
         try {
             val history = api.history(r.link)
             val known = r.inspected.toMutableMap()
             val latest = history.firstOrNull { r.previews || !it.preview }
             val errors = mutableListOf<String>()
             if (inspectApks) for (a in latest?.assets.orEmpty().filter { it.identity() !in known }.take(4)) {
-                try { known[a.identity()] = fetch(r, a) { _, meta -> meta } }
+                try { known[a.identity()] = fetch(r, a, inspectAllowed) { _, meta -> meta } }
                 catch (e: Exception) {
                     if (e is InterruptedException) throw e
                     errors += "${a.name}: ${storeError(e)}"
