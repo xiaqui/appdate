@@ -298,8 +298,8 @@ jobs:
           if [[ "$GITHUB_REF_NAME" == fix/android7-wifi-diagnostics ]]; then
             test "$version" = 0.9.1
             test "$code" = 18
-            title="Android 7 APK download diagnostics"
-            details="PR #13 records the active network at Wi-Fi deferral and distinguishes APK API/redirect/body transport failures. On Z4T, install over the existing AppDate, leave automatic Wi-Fi download enabled, relaunch on the affected Wi-Fi, then capture the repository detail result. Compare with an explicit individual APK inspection on the same network."
+            title="legacy Android TLS compatibility"
+            details="PR #13 keeps system trust and adds the fingerprint-pinned official ISRG Root X1 for AppDate HTTPS on Android 6/7 without trusting arbitrary user CAs or disabling hostname, expiry, signature, redirect, or cleartext checks. Install over the existing AppDate on Z4T and a Z3TC without manually adding that CA; confirm registration, PAT, history, saved APKs, Wi-Fi limits, automatic download, and explicit APK inspection remain intact."
           fi
           apk_source=$(jq -er .sourceSha delivery/manifest.json)
           export PREVIEW_SOURCE="$GITHUB_SHA"
