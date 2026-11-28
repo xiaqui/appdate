@@ -20,6 +20,7 @@ import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLSession
+import org.xmlpull.v1.XmlPullParser
 
 @RunWith(AndroidJUnit4::class)
 class TlsTrustAnchorTest {
@@ -93,9 +94,19 @@ class TlsTrustAnchorTest {
         if (Build.VERSION.SDK_INT == Build.VERSION_CODES.M) {
             assertNotSame(HttpsURLConnection.getDefaultSSLSocketFactory(), connection.sslSocketFactory)
         } else {
-            @Suppress("DEPRECATION")
-            val info = target.packageManager.getApplicationInfo(target.packageName, 0)
-            assertEquals(R.xml.network_security_config, info.networkSecurityConfigRes)
+            val parser = target.resources.getXml(R.xml.network_security_config)
+            var system = false
+            var bundled = false
+            while (parser.eventType != XmlPullParser.END_DOCUMENT) {
+                if (parser.eventType == XmlPullParser.START_TAG && parser.name == "certificates") {
+                    val source = parser.getAttributeValue(null, "src")
+                    system = system || source == "system"
+                    bundled = bundled || parser.getAttributeResourceValue(null, "src", 0) == R.raw.isrg_root_x1
+                }
+                parser.next()
+            }
+            assertTrue(system)
+            assertTrue(bundled)
         }
         connection.disconnect()
     }
