@@ -45,12 +45,13 @@ PR #6の0.8.1/code 13検収版は [`store-preview-fa230d039ad8`](https://github.
 - 単一・複数APKのアプリ名、packageName、versionCode、導入済み版を確認。プレリリース表示を切り替え、過去版を選択。
 - 旧版・署名違いの表示を確認。Android 6/7と8以降でOS確認画面を開き、キャンセル後の保存、再起動後の再試行を確認。
 
-### Z4T（Android 7）のAPK取得診断
+### Z4T（Android 7）・Z3TC（Android 6）のTLS再検収
 
-1. 0.8.4（versionCode 16）を既存のAppDateへ上書きします。登録、認証、保存済みAPK、更新設定が残っていることを確認します。
-2. 症状が出たWi-Fiにつなぎ、起動時の自動更新確認とWi-Fi接続時のAPK自動取得をONにしてAppDateを開き直します。処理完了後、失敗したrepoの詳細で「今回の確認」と「自動／一括取得」を記録します。
-3. 同じ回線・同じReleaseのAPK詳細を開き、個別の再解析を実行します。自動取得の表示が保留、個別操作が成功なら、自動取得のWi-Fi判定を調べます。個別操作でHTTPや「APK通信失敗」が出た場合は、通信段階とエラー種別を記録します。
-4. 保留行の `active`、`internet`、`validated`、`otherWifi` を控えます。`otherWifi=true` は別のWi-Fiネットワークが見えていることを示します。VPNの実際の経路は端末の接続状況と照合してください。
+1. 0.9.1（versionCode 18）を既存のAppDateへ上書きします。登録、認証、保存済みAPK、更新設定が残っていることを確認します。
+2. 症状が出たWi-Fiにつなぎ、起動時の自動更新確認とWi-Fi接続時のAPK自動取得をONにしてAppDateを開き直します。処理完了後、repo詳細の「今回の確認」と「自動／一括取得」を記録します。
+3. 同じ回線・同じReleaseのAPK詳細を開き、個別の再解析を実行します。Z4Tと、ISRG Root X1を手動導入していないZ3TCの双方で成功することを確認します。
+4. TLS失敗が残る場合は、保留行の `active`、`internet`、`validated`、`otherWifi` と、表示された通信段階・エラー種別を控えます。PAT、署名付きURL、SSID、IPアドレスは記録しません。
+5. 端末に既にあるCAは削除せず、AppDate側の互換実装だけで再検収します。信頼境界とfingerprintは `docs/TLS_COMPATIBILITY_JA.md` を参照してください。
 
 JDK 17、Gradle 8.9、Android SDK 35。ローカル検証は `gradle testDebugUnitTest lintDebug assembleDebug`、端末試験は `gradle connectedDebugAndroidTest`。エミュレータの自動試験と物理端末の検収は区別します。
 

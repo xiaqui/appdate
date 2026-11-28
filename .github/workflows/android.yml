@@ -296,8 +296,8 @@ jobs:
           title="startup refresh summary"
           details="Startup refresh and shared automatic/manual summary."
           if [[ "$GITHUB_REF_NAME" == fix/android7-wifi-diagnostics ]]; then
-            test "$version" = 0.8.4
-            test "$code" = 16
+            test "$version" = 0.9.1
+            test "$code" = 18
             title="Android 7 APK download diagnostics"
             details="PR #13 records the active network at Wi-Fi deferral and distinguishes APK API/redirect/body transport failures. On Z4T, install over the existing AppDate, leave automatic Wi-Fi download enabled, relaunch on the affected Wi-Fi, then capture the repository detail result. Compare with an explicit individual APK inspection on the same network."
           fi
