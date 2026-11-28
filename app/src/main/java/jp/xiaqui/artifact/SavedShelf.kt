@@ -25,7 +25,9 @@ internal class SavedShelf(private val context: Context) {
     private fun candidates(repo: String, asset: ReleaseApk) = dir.listFiles().orEmpty().filter { file ->
         val r = record(file)
         val key = r?.optString("asset")
-        val oldKey = "${asset.id}:${asset.size}:${asset.digest.orEmpty()}"
+        // Before multi-source support the ledger key had no source namespace, but did include updated.
+        // Keep accepting it so repo rename history and already-downloaded APKs survive lazy migration.
+        val oldKey = "${asset.id}:${asset.size}:${asset.digest.orEmpty()}:${asset.updated}"
         file.isFile && r != null && catalog.canonical(r.optString("repo")) == repo && (key == asset.identity() || key == oldKey)
     }
 
